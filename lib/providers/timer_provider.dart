@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,12 +15,31 @@ import 'task_provider.dart';
 
 // Riverpod provider
 final timerProvider = ChangeNotifierProvider<TimerProvider>((ref) {
-  return TimerProvider(
+  final TimerProvider notifier = TimerProvider(
     ref,
     repository: ref.watch(focusRepositoryProvider),
     notificationClient: ref.watch(notificationClientProvider),
+    now: ref.watch(timerClockProvider),
   );
+
+  ref.listen<String?>(
+    taskProvider.select((TaskProvider provider) => provider.currentTaskId),
+    (String? previousTaskId, String? nextTaskId) {
+      if (previousTaskId == nextTaskId) {
+        return;
+      }
+
+      unawaited(notifier.resetForTaskChange(previousTaskId: previousTaskId));
+    },
+  );
+
+  return notifier;
 });
+
+final Provider<DateTime Function()> timerClockProvider =
+    Provider<DateTime Function()>((Ref ref) {
+      return DateTime.now;
+    });
 
 enum TimerState { stopped, running, paused }
 
@@ -41,7 +61,9 @@ class TimerProvider with ChangeNotifier {
   final Ref _ref;
   final FocusRepository _repository;
   final NotificationClient _notificationClient;
+  final DateTime Function() _now;
   Timer? _timer;
+  AppLifecycleListener? _lifecycleListener;
 
   // Debug mode: use short timers for testing (only in debug builds)
   static const bool _useDebugTimers =
@@ -76,6 +98,7 @@ class TimerProvider with ChangeNotifier {
   // Track current pomodoro session start time and ID
   DateTime? _currentSessionStartTime;
   String? _currentSessionId;
+  DateTime? _currentPhaseEndsAt;
   String? _activeSystemTimelineId;
   bool _isStandaloneTimerRun = false;
 
@@ -83,8 +106,11 @@ class TimerProvider with ChangeNotifier {
     this._ref, {
     required FocusRepository repository,
     required NotificationClient notificationClient,
+    required DateTime Function() now,
   }) : _repository = repository,
-       _notificationClient = notificationClient {
+       _notificationClient = notificationClient,
+       _now = now {
+    _lifecycleListener = AppLifecycleListener(onResume: _handleAppResume);
     _loadSettings();
   }
 
@@ -173,8 +199,9 @@ class TimerProvider with ChangeNotifier {
 
     // Record session start time (only on first start, resume after pause doesn't restart)
     if (_currentSessionStartTime == null && _mode == TimerMode.focus) {
-      _currentSessionStartTime = DateTime.now();
-      _currentSessionId = DateTime.now().millisecondsSinceEpoch.toString();
+      final DateTime startAt = _now();
+      _currentSessionStartTime = startAt;
+      _currentSessionId = startAt.millisecondsSinceEpoch.toString();
       _isStandaloneTimerRun =
           _ref.read(taskProvider.notifier).currentTask == null;
       debugPrint(
@@ -182,25 +209,21 @@ class TimerProvider with ChangeNotifier {
       );
       unawaited(_scheduleSystemTimelineForCurrentTask());
     } else if (wasPaused && _mode == TimerMode.focus) {
-      unawaited(_scheduleSystemTimelineForCurrentTask(startAt: DateTime.now()));
+      unawaited(_scheduleSystemTimelineForCurrentTask(startAt: _now()));
     }
 
+    _setCurrentPhaseDeadline();
     notifyListeners();
 
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_timeLeftInSeconds <= 0) {
-        _onTimerComplete();
-      } else {
-        _timeLeftInSeconds--;
-        notifyListeners();
-      }
-    });
+    _startTicker();
   }
 
   void pauseTimer() {
     if (_state != TimerState.running) return;
 
+    _syncTimeLeftWithSystemClock();
     _timer?.cancel();
+    _currentPhaseEndsAt = null;
     _state = TimerState.paused;
     if (_mode == TimerMode.focus) {
       unawaited(_cancelSystemTimelineForCurrentTask());
@@ -209,7 +232,9 @@ class TimerProvider with ChangeNotifier {
   }
 
   Future<void> stopTimer() async {
+    _syncTimeLeftWithSystemClock();
     _timer?.cancel();
+    _currentPhaseEndsAt = null;
     await _cancelSystemTimelineForCurrentTask();
     _state = TimerState.stopped;
     _isStandaloneTimerRun = false;
@@ -223,13 +248,39 @@ class TimerProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> resetForTaskChange({String? previousTaskId}) async {
+    if (_state == TimerState.stopped &&
+        _mode == TimerMode.focus &&
+        _timeLeftInSeconds == _focusTimeInSeconds &&
+        _currentSessionStartTime == null) {
+      return;
+    }
+
+    _syncTimeLeftWithSystemClock();
+    _timer?.cancel();
+    _currentPhaseEndsAt = null;
+    await _cancelSystemTimelineForCurrentTask(taskId: previousTaskId);
+
+    if (_mode == TimerMode.focus && _currentSessionStartTime != null) {
+      await _recordPomodoroSession(completed: false, taskId: previousTaskId);
+    }
+
+    _state = TimerState.stopped;
+    _mode = TimerMode.focus;
+    _isStandaloneTimerRun = false;
+    _updateTimeForCurrentMode();
+    notifyListeners();
+  }
+
   void skipTimer() {
+    _currentPhaseEndsAt = null;
     unawaited(_cancelSystemTimelineForCurrentTask());
     _onTimerComplete();
   }
 
   Future<void> _onTimerComplete() async {
     _timer?.cancel();
+    _currentPhaseEndsAt = null;
     _state = TimerState.stopped;
 
     final currentTask = _ref.read(taskProvider.notifier).currentTask;
@@ -336,14 +387,17 @@ class TimerProvider with ChangeNotifier {
   }
 
   /// Record pomodoro session to database
-  Future<void> _recordPomodoroSession({required bool completed}) async {
+  Future<void> _recordPomodoroSession({
+    required bool completed,
+    String? taskId,
+  }) async {
     if (_currentSessionStartTime == null) {
       debugPrint('⚠️ [TIMER] Cannot record session: no start time');
       return;
     }
 
     try {
-      final endTime = DateTime.now();
+      final endTime = _now();
       final durationSeconds = endTime
           .difference(_currentSessionStartTime!)
           .inSeconds;
@@ -354,9 +408,17 @@ class TimerProvider with ChangeNotifier {
                 : (durationSeconds / 60).round()
           : (durationSeconds / 60).round();
       final currentTask = _ref.read(taskProvider.notifier).currentTask;
+      final String? sessionTaskId = taskId ?? currentTask?.id;
+      final Task? sessionTask = sessionTaskId == null
+          ? null
+          : _ref
+                .read(taskProvider.notifier)
+                .tasks
+                .where((Task task) => task.id == sessionTaskId)
+                .firstOrNull;
 
       await _repository.insertPomodoroSession(
-        taskId: currentTask?.id,
+        taskId: sessionTaskId,
         startTime: _currentSessionStartTime!,
         endTime: endTime,
         duration: duration,
@@ -365,7 +427,7 @@ class TimerProvider with ChangeNotifier {
       );
 
       debugPrint('✅ [TIMER] Pomodoro session recorded to database');
-      debugPrint('   - Task: ${currentTask?.title ?? "No associated task"}');
+      debugPrint('   - Task: ${sessionTask?.title ?? "No associated task"}');
       debugPrint('   - Duration: $duration minutes');
       debugPrint('   - Completed: $completed');
 
@@ -374,6 +436,60 @@ class TimerProvider with ChangeNotifier {
       _currentSessionId = null;
     } catch (e) {
       debugPrint('❌ [TIMER] Failed to record pomodoro session: $e');
+    }
+  }
+
+  void _startTicker() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (Timer timer) {
+      if (_syncTimeLeftWithSystemClock()) {
+        unawaited(_onTimerComplete());
+      }
+    });
+  }
+
+  void _setCurrentPhaseDeadline() {
+    if (_state != TimerState.running) {
+      return;
+    }
+    _currentPhaseEndsAt = _now().add(Duration(seconds: _timeLeftInSeconds));
+  }
+
+  bool _syncTimeLeftWithSystemClock() {
+    if (_state != TimerState.running || _currentPhaseEndsAt == null) {
+      return false;
+    }
+
+    final int remainingMilliseconds = _currentPhaseEndsAt!
+        .difference(_now())
+        .inMilliseconds;
+    final int nextTimeLeft = remainingMilliseconds <= 0
+        ? 0
+        : (remainingMilliseconds / 1000).ceil();
+    if (nextTimeLeft != _timeLeftInSeconds) {
+      _timeLeftInSeconds = nextTimeLeft;
+      notifyListeners();
+    }
+    return nextTimeLeft <= 0;
+  }
+
+  void _handleAppResume() {
+    if (_state != TimerState.running) {
+      return;
+    }
+
+    if (_syncTimeLeftWithSystemClock()) {
+      unawaited(_onTimerComplete());
+      return;
+    }
+
+    _startTicker();
+  }
+
+  @visibleForTesting
+  Future<void> syncTimerWithSystemClockForTesting() async {
+    if (_syncTimeLeftWithSystemClock()) {
+      await _onTimerComplete();
     }
   }
 
@@ -405,6 +521,7 @@ class TimerProvider with ChangeNotifier {
     _focusTimeInMinutes = minutes;
     if (_mode == TimerMode.focus) {
       _updateTimeForCurrentMode();
+      _setCurrentPhaseDeadline();
     }
     _saveSettings();
     unawaited(_rescheduleSystemTimelineForCurrentTask());
@@ -415,6 +532,7 @@ class TimerProvider with ChangeNotifier {
     _shortBreakTimeInMinutes = minutes;
     if (_mode == TimerMode.shortBreak) {
       _updateTimeForCurrentMode();
+      _setCurrentPhaseDeadline();
     }
     _saveSettings();
     unawaited(_rescheduleSystemTimelineForCurrentTask());
@@ -425,6 +543,7 @@ class TimerProvider with ChangeNotifier {
     _longBreakTimeInMinutes = minutes;
     if (_mode == TimerMode.longBreak) {
       _updateTimeForCurrentMode();
+      _setCurrentPhaseDeadline();
     }
     _saveSettings();
     unawaited(_rescheduleSystemTimelineForCurrentTask());
@@ -571,6 +690,7 @@ class TimerProvider with ChangeNotifier {
   @override
   void dispose() {
     _timer?.cancel();
+    _lifecycleListener?.dispose();
     super.dispose();
   }
 }

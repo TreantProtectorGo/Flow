@@ -22,24 +22,34 @@ struct FocusTimerLiveActivityWidget: Widget {
     } dynamicIsland: { context in
       DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
-          Label("Flow", systemImage: "timer")
+          HStack(spacing: 6) {
+            FocusTimerGlyph(size: 18)
+            Text("Flow")
+          }
         }
         DynamicIslandExpandedRegion(.trailing) {
-          Text(context.attributes.metadata?.pomodoroProgress ?? "")
-            .monospacedDigit()
+          if let progress = context.attributes.metadata?.pomodoroProgress, !progress.isEmpty {
+            Text(progress)
+              .monospacedDigit()
+          }
         }
         DynamicIslandExpandedRegion(.bottom) {
-          FocusTimerCountdownText(context: context)
+          FocusTimerCountdownText(context: context, fallbackTitle: "Focus")
         }
       } compactLeading: {
-        Image(systemName: "timer")
+        FocusTimerGlyph(size: 18)
       } compactTrailing: {
-        FocusTimerCountdownText(context: context)
-          .font(.caption2)
+        FocusTimerCountdownText(context: context, fallbackTitle: nil)
+          .font(.caption.weight(.semibold))
           .monospacedDigit()
+          .foregroundStyle(FocusTimerStyle.primary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.8)
+          .frame(width: 48, alignment: .trailing)
       } minimal: {
-        Image(systemName: "timer")
+        FocusTimerGlyph(size: 16)
       }
+      .keylineTint(FocusTimerStyle.primary)
     }
   }
 }
@@ -51,37 +61,46 @@ private struct FocusTimerLockScreenView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack {
-        Label("Flow", systemImage: "timer")
-          .font(.headline)
+        HStack(spacing: 8) {
+          FocusTimerGlyph(size: 22)
+          Text("Flow")
+            .font(.headline)
+        }
         Spacer()
-        Text(context.attributes.metadata?.pomodoroProgress ?? "")
-          .font(.headline)
-          .monospacedDigit()
+        if let progress = context.attributes.metadata?.pomodoroProgress, !progress.isEmpty {
+          Text(progress)
+            .font(.headline)
+            .monospacedDigit()
+        }
       }
 
       Text(context.attributes.metadata?.taskTitle ?? "")
         .font(.subheadline)
         .lineLimit(1)
 
-      FocusTimerCountdownText(context: context)
+      FocusTimerCountdownText(context: context, fallbackTitle: "Focus")
         .font(.title2)
         .monospacedDigit()
     }
     .padding()
-    .activityBackgroundTint(.blue.opacity(0.16))
-    .activitySystemActionForegroundColor(.blue)
+    .activityBackgroundTint(FocusTimerStyle.primary.opacity(0.16))
+    .activitySystemActionForegroundColor(FocusTimerStyle.primary)
   }
 }
 
 @available(iOS 26.0, *)
 private struct FocusTimerCountdownText: View {
   let context: ActivityViewContext<AlarmAttributes<FocusTaskAlarmMetadata>>
+  let fallbackTitle: String?
 
+  @ViewBuilder
   var body: some View {
     if let fireDate {
       Text(timerInterval: Date()...fireDate, countsDown: true)
+    } else if let fallbackTitle {
+      Text(fallbackTitle)
     } else {
-      Text(context.attributes.metadata?.taskTitle ?? "Focus")
+      EmptyView()
     }
   }
 
@@ -101,6 +120,38 @@ private struct FocusTimerCountdownText: View {
       return nil
     }
   }
+}
+
+private struct FocusTimerGlyph: View {
+  let size: CGFloat
+
+  var body: some View {
+    ZStack {
+      Circle()
+        .stroke(FocusTimerStyle.primary, lineWidth: max(1.5, size * 0.12))
+
+      Rectangle()
+        .fill(FocusTimerStyle.primary)
+        .frame(width: max(1.2, size * 0.1), height: size * 0.34)
+        .offset(y: -size * 0.12)
+
+      Rectangle()
+        .fill(FocusTimerStyle.primary)
+        .frame(width: size * 0.26, height: max(1.2, size * 0.1))
+        .offset(x: size * 0.1)
+
+      Capsule()
+        .fill(FocusTimerStyle.primary)
+        .frame(width: size * 0.38, height: max(1.5, size * 0.12))
+        .offset(y: -size * 0.58)
+    }
+    .frame(width: size, height: size)
+    .accessibilityLabel(Text("Focus timer"))
+  }
+}
+
+private enum FocusTimerStyle {
+  static let primary = Color(red: 0.67, green: 0.78, blue: 1.0)
 }
 
 @main

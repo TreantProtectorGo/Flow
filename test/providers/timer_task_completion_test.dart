@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeFocusRepository implements FocusRepository {
   final List<Task> tasks;
+  final List<String?> insertedPomodoroTaskIds = <String?>[];
   int insertedPomodoroSessions = 0;
 
   _FakeFocusRepository({required this.tasks});
@@ -36,6 +37,7 @@ class _FakeFocusRepository implements FocusRepository {
     required String sessionType,
   }) async {
     insertedPomodoroSessions += 1;
+    insertedPomodoroTaskIds.add(taskId);
   }
 
   @override
@@ -156,6 +158,8 @@ class _FakeStatisticsNotifier extends StatisticsNotifier {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test(
     'final pomodoro completion cancels reminder and emits celebration event',
     () async {
@@ -364,6 +368,140 @@ void main() {
       );
     },
   );
+
+  test(
+    'running standalone timer syncs app time after wall-clock elapsed',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      DateTime fakeNow = DateTime(2026, 4, 20, 10, 0);
+      final _FakeFocusRepository repository = _FakeFocusRepository(
+        tasks: <Task>[],
+      );
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          focusRepositoryProvider.overrideWithValue(repository),
+          notificationClientProvider.overrideWithValue(
+            _FakeNotificationClient(),
+          ),
+          timerClockProvider.overrideWithValue(() => fakeNow),
+          statisticsProvider.overrideWith(
+            (Ref ref) => _FakeStatisticsNotifier(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(taskProvider.notifier).reloadTasks();
+      await _flushMicrotasks();
+      final TimerProvider timer = container.read(timerProvider.notifier);
+      timer.startTimer();
+      await _flushMicrotasks();
+
+      fakeNow = fakeNow.add(const Duration(seconds: 90));
+      await timer.syncTimerWithSystemClockForTesting();
+
+      expect(timer.timeLeftInSeconds, 23 * 60 + 30);
+    },
+  );
+
+  test('running task timer syncs app time after wall-clock elapsed', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'currentTaskId': 'task-1',
+    });
+    DateTime fakeNow = DateTime(2026, 4, 20, 10, 0);
+    final _FakeFocusRepository repository = _FakeFocusRepository(
+      tasks: <Task>[
+        Task(
+          id: 'task-1',
+          title: 'Build feature',
+          pomodoroCount: 2,
+          completedPomodoros: 0,
+          priority: TaskPriority.high,
+          status: TaskStatus.inProgress,
+          createdAt: DateTime(2026, 4, 19, 9, 1),
+        ),
+      ],
+    );
+    final ProviderContainer container = ProviderContainer(
+      overrides: <Override>[
+        focusRepositoryProvider.overrideWithValue(repository),
+        notificationClientProvider.overrideWithValue(_FakeNotificationClient()),
+        timerClockProvider.overrideWithValue(() => fakeNow),
+        statisticsProvider.overrideWith((Ref ref) => _FakeStatisticsNotifier()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(taskProvider.notifier).reloadTasks();
+    await _flushMicrotasks();
+    final TimerProvider timer = container.read(timerProvider.notifier);
+    timer.startTimer();
+    await _flushMicrotasks();
+
+    fakeNow = fakeNow.add(const Duration(seconds: 90));
+    await timer.syncTimerWithSystemClockForTesting();
+
+    expect(timer.timeLeftInSeconds, 23 * 60 + 30);
+  });
+
+  test('switching current task resets a running focus timer', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'currentTaskId': 'task-1',
+    });
+    DateTime fakeNow = DateTime(2026, 4, 20, 10, 0);
+    final _FakeFocusRepository repository = _FakeFocusRepository(
+      tasks: <Task>[
+        Task(
+          id: 'task-1',
+          title: 'Build feature',
+          pomodoroCount: 2,
+          completedPomodoros: 0,
+          priority: TaskPriority.high,
+          status: TaskStatus.inProgress,
+          createdAt: DateTime(2026, 4, 19, 9, 1),
+        ),
+        Task(
+          id: 'task-2',
+          title: 'Write tests',
+          pomodoroCount: 1,
+          completedPomodoros: 0,
+          priority: TaskPriority.medium,
+          status: TaskStatus.pending,
+          createdAt: DateTime(2026, 4, 19, 9, 0),
+        ),
+      ],
+    );
+    final _FakeTaskTimerSystemScheduler systemScheduler =
+        _FakeTaskTimerSystemScheduler();
+    final ProviderContainer container = ProviderContainer(
+      overrides: <Override>[
+        focusRepositoryProvider.overrideWithValue(repository),
+        notificationClientProvider.overrideWithValue(_FakeNotificationClient()),
+        taskTimerSystemSchedulerProvider.overrideWithValue(systemScheduler),
+        timerClockProvider.overrideWithValue(() => fakeNow),
+        statisticsProvider.overrideWith((Ref ref) => _FakeStatisticsNotifier()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(taskProvider.notifier).reloadTasks();
+    await _flushMicrotasks();
+    final TimerProvider timer = container.read(timerProvider.notifier);
+    timer.startTimer();
+    await _flushMicrotasks();
+
+    fakeNow = fakeNow.add(const Duration(seconds: 90));
+    await timer.syncTimerWithSystemClockForTesting();
+    await container.read(taskProvider.notifier).setCurrentTask('task-2');
+    await _flushMicrotasks();
+
+    expect(timer.state, TimerState.stopped);
+    expect(timer.mode, TimerMode.focus);
+    expect(timer.timeLeftInSeconds, 25 * 60);
+    expect(repository.insertedPomodoroSessions, equals(1));
+    expect(repository.insertedPomodoroTaskIds, <String?>['task-1']);
+    expect(systemScheduler.canceledTaskIds, contains('task-1'));
+  });
 
   test(
     'resuming standalone timer reschedules the background timeline',
