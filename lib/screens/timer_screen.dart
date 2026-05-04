@@ -209,38 +209,6 @@ class _TimerScreenState extends ConsumerState<TimerScreen>
                 overflow: TextOverflow.ellipsis,
               ),
             ],
-            if (currentTask.dailyReminderTime != null &&
-                currentTask.status != TaskStatus.completed) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.notifications_active_outlined,
-                      size: 16,
-                      color: theme.colorScheme.onSecondaryContainer,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${l10n.dailyReminder}: ${_formatReminderTime(context, currentTask.dailyReminderTime!)}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSecondaryContainer,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
             const SizedBox(height: 12),
             Row(
               children: [
@@ -590,15 +558,6 @@ class CircularProgressPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(CustomPainter oldDelegate) => true;
-}
-
-String _formatReminderTime(BuildContext context, String reminderTime) {
-  final List<String> parts = reminderTime.split(':');
-  final TimeOfDay timeOfDay = TimeOfDay(
-    hour: int.parse(parts.first),
-    minute: int.parse(parts.last),
-  );
-  return MaterialLocalizations.of(context).formatTimeOfDay(timeOfDay);
 }
 
 String _getModeDisplay(TimerMode mode, AppLocalizations l10n) {
