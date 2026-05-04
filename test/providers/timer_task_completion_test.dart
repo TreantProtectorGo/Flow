@@ -365,6 +365,143 @@ void main() {
     },
   );
 
+  test(
+    'resuming standalone timer reschedules the background timeline',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final _FakeFocusRepository repository = _FakeFocusRepository(
+        tasks: <Task>[],
+      );
+      final _FakeTaskTimerSystemScheduler systemScheduler =
+          _FakeTaskTimerSystemScheduler();
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          focusRepositoryProvider.overrideWithValue(repository),
+          notificationClientProvider.overrideWithValue(
+            _FakeNotificationClient(),
+          ),
+          taskTimerSystemSchedulerProvider.overrideWithValue(systemScheduler),
+          statisticsProvider.overrideWith(
+            (Ref ref) => _FakeStatisticsNotifier(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(taskProvider.notifier).reloadTasks();
+      await _flushMicrotasks();
+      final TimerProvider timer = container.read(timerProvider.notifier);
+      timer.startTimer();
+      await _flushMicrotasks();
+      timer.pauseTimer();
+      await _flushMicrotasks();
+      timer.startTimer();
+      await _flushMicrotasks();
+
+      expect(systemScheduler.canceledTaskIds, hasLength(1));
+      expect(systemScheduler.scheduledPlans, hasLength(2));
+      expect(
+        systemScheduler.scheduledPlans.first.taskId,
+        startsWith('standalone:'),
+      );
+      expect(
+        systemScheduler.scheduledPlans.last.taskId,
+        startsWith('standalone:'),
+      );
+    },
+  );
+
+  test('resuming task timer reschedules the background timeline', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'currentTaskId': 'task-1',
+    });
+    final _FakeFocusRepository repository = _FakeFocusRepository(
+      tasks: <Task>[
+        Task(
+          id: 'task-1',
+          title: 'Build feature',
+          pomodoroCount: 2,
+          completedPomodoros: 0,
+          priority: TaskPriority.high,
+          status: TaskStatus.inProgress,
+          createdAt: DateTime(2026, 4, 19, 9, 1),
+        ),
+      ],
+    );
+    final _FakeTaskTimerSystemScheduler systemScheduler =
+        _FakeTaskTimerSystemScheduler();
+    final ProviderContainer container = ProviderContainer(
+      overrides: <Override>[
+        focusRepositoryProvider.overrideWithValue(repository),
+        notificationClientProvider.overrideWithValue(_FakeNotificationClient()),
+        taskTimerSystemSchedulerProvider.overrideWithValue(systemScheduler),
+        statisticsProvider.overrideWith((Ref ref) => _FakeStatisticsNotifier()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(taskProvider.notifier).reloadTasks();
+    await _flushMicrotasks();
+    final TimerProvider timer = container.read(timerProvider.notifier);
+    timer.startTimer();
+    await _flushMicrotasks();
+    timer.pauseTimer();
+    await _flushMicrotasks();
+    timer.startTimer();
+    await _flushMicrotasks();
+
+    expect(systemScheduler.canceledTaskIds, <String>['task-1']);
+    expect(systemScheduler.scheduledPlans, hasLength(2));
+    expect(systemScheduler.scheduledPlans.first.taskId, 'task-1');
+    expect(systemScheduler.scheduledPlans.last.taskId, 'task-1');
+  });
+
+  test(
+    'stopping standalone timer allows a new background timeline on next start',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final _FakeFocusRepository repository = _FakeFocusRepository(
+        tasks: <Task>[],
+      );
+      final _FakeTaskTimerSystemScheduler systemScheduler =
+          _FakeTaskTimerSystemScheduler();
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          focusRepositoryProvider.overrideWithValue(repository),
+          notificationClientProvider.overrideWithValue(
+            _FakeNotificationClient(),
+          ),
+          taskTimerSystemSchedulerProvider.overrideWithValue(systemScheduler),
+          statisticsProvider.overrideWith(
+            (Ref ref) => _FakeStatisticsNotifier(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(taskProvider.notifier).reloadTasks();
+      await _flushMicrotasks();
+      final TimerProvider timer = container.read(timerProvider.notifier);
+      timer.startTimer();
+      await _flushMicrotasks();
+      await timer.stopTimer();
+      await _flushMicrotasks();
+      timer.startTimer();
+      await _flushMicrotasks();
+
+      expect(systemScheduler.canceledTaskIds, hasLength(1));
+      expect(systemScheduler.scheduledPlans, hasLength(2));
+      expect(
+        systemScheduler.scheduledPlans.first.taskId,
+        startsWith('standalone:'),
+      );
+      expect(
+        systemScheduler.scheduledPlans.last.taskId,
+        startsWith('standalone:'),
+      );
+    },
+  );
+
   test('standalone timer stops after its short break completes', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final _FakeFocusRepository repository = _FakeFocusRepository(

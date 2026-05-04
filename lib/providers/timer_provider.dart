@@ -168,6 +168,7 @@ class TimerProvider with ChangeNotifier {
   void startTimer() {
     if (_state == TimerState.running) return;
 
+    final bool wasPaused = _state == TimerState.paused;
     _state = TimerState.running;
 
     // Record session start time (only on first start, resume after pause doesn't restart)
@@ -180,6 +181,8 @@ class TimerProvider with ChangeNotifier {
         '⏱️ [TIMER] Starting new pomodoro session (ID: $_currentSessionId)',
       );
       unawaited(_scheduleSystemTimelineForCurrentTask());
+    } else if (wasPaused && _mode == TimerMode.focus) {
+      unawaited(_scheduleSystemTimelineForCurrentTask(startAt: DateTime.now()));
     }
 
     notifyListeners();
@@ -428,10 +431,12 @@ class TimerProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _scheduleSystemTimelineForCurrentTask() async {
+  Future<void> _scheduleSystemTimelineForCurrentTask({
+    DateTime? startAt,
+  }) async {
     final Task? currentTask = _ref.read(taskProvider.notifier).currentTask;
-    final DateTime? startAt = _currentSessionStartTime;
-    if (startAt == null || _mode != TimerMode.focus) {
+    final DateTime? timelineStartAt = startAt ?? _currentSessionStartTime;
+    if (timelineStartAt == null || _mode != TimerMode.focus) {
       return;
     }
 
@@ -439,12 +444,12 @@ class TimerProvider with ChangeNotifier {
     final TaskTimerPlan plan;
     if (currentTask == null) {
       final String timelineId =
-          'standalone:${_currentSessionId ?? startAt.millisecondsSinceEpoch}';
+          'standalone:${_currentSessionId ?? timelineStartAt.millisecondsSinceEpoch}';
       plan =
           TaskTimerPlan.createStandalone(
             id: timelineId,
             title: strings.pomodoroMode,
-            startAt: startAt,
+            startAt: timelineStartAt,
             focusMinutes: _focusTimeInMinutes,
             shortBreakMinutes: _shortBreakTimeInMinutes,
             firstFocusSeconds: _timeLeftInSeconds,
@@ -462,7 +467,7 @@ class TimerProvider with ChangeNotifier {
       plan =
           TaskTimerPlan.create(
             task: currentTask,
-            startAt: startAt,
+            startAt: timelineStartAt,
             focusMinutes: _focusTimeInMinutes,
             shortBreakMinutes: _shortBreakTimeInMinutes,
             longBreakMinutes: _longBreakTimeInMinutes,
