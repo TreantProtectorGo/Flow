@@ -19,6 +19,7 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
   let payloadType: String
   let taskTitle: String
   let pomodoroProgress: String
+  let alarmId: String
 }
 #endif
 
@@ -309,19 +310,21 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
       let completed = (phase["completedPomodorosAtEnd"] as? NSNumber)?.intValue ?? 0
       let total = (phase["totalPomodoros"] as? NSNumber)?.intValue ?? 0
       let progress = "\(completed)/\(total)"
+      let accentColor = Color(red: 0.67, green: 0.78, blue: 1.0)
+      let alarmId = UUID()
       let stopButton = AlarmButton(
         text: localizedResource("Stop"),
-        textColor: .blue,
+        textColor: accentColor,
         systemImageName: "stop.circle"
       )
       let pauseButton = AlarmButton(
         text: localizedResource("Pause"),
-        textColor: .blue,
+        textColor: accentColor,
         systemImageName: "pause.circle"
       )
       let resumeButton = AlarmButton(
         text: localizedResource("Resume"),
-        textColor: .blue,
+        textColor: accentColor,
         systemImageName: "play.circle"
       )
       let alert = AlarmPresentation.Alert(
@@ -344,19 +347,19 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
         phaseIndex: phaseIndex,
         payloadType: payloadType,
         taskTitle: taskTitle,
-        pomodoroProgress: progress
+        pomodoroProgress: progress,
+        alarmId: alarmId.uuidString
       )
       let attributes = AlarmAttributes(
         presentation: presentation,
         metadata: metadata,
-        tintColor: .blue
+        tintColor: accentColor
       )
       let duration = max(1, endAt.timeIntervalSinceNow)
       let configuration = AlarmManager.AlarmConfiguration.timer(
         duration: duration,
         attributes: attributes
       )
-      let alarmId = UUID()
 
       do {
         _ = try await AlarmManager.shared.schedule(id: alarmId, configuration: configuration)

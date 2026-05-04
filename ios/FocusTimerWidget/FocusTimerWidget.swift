@@ -1,5 +1,6 @@
 import ActivityKit
 import AlarmKit
+import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -12,6 +13,7 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
   let payloadType: String
   let taskTitle: String
   let pomodoroProgress: String
+  let alarmId: String
 }
 
 @available(iOS 26.0, *)
@@ -22,22 +24,19 @@ struct FocusTimerLiveActivityWidget: Widget {
     } dynamicIsland: { context in
       DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
-          HStack(spacing: 6) {
-            FocusTimerGlyph(size: 18)
-            Text("Flow")
-          }
+          FocusTimerBrandView(iconSize: 18, font: .headline)
+            .padding(.leading, FocusTimerStyle.expandedEdgeInset)
         }
         DynamicIslandExpandedRegion(.trailing) {
-          if let progress = context.attributes.metadata?.pomodoroProgress, !progress.isEmpty {
-            Text(progress)
-              .monospacedDigit()
-          }
+          FocusTimerProgressPill(progress: context.attributes.metadata?.pomodoroProgress)
+            .padding(.trailing, FocusTimerStyle.expandedEdgeInset)
         }
         DynamicIslandExpandedRegion(.bottom) {
-          FocusTimerCountdownText(context: context, fallbackTitle: "Focus")
+          FocusTimerExpandedIslandView(context: context)
         }
       } compactLeading: {
         FocusTimerGlyph(size: 18)
+          .offset(x: FocusTimerStyle.compactEdgeOffset)
       } compactTrailing: {
         FocusTimerCountdownText(context: context, fallbackTitle: nil)
           .font(.caption.weight(.semibold))
@@ -46,6 +45,7 @@ struct FocusTimerLiveActivityWidget: Widget {
           .lineLimit(1)
           .minimumScaleFactor(0.8)
           .frame(width: 48, alignment: .trailing)
+          .offset(x: -FocusTimerStyle.compactEdgeOffset)
       } minimal: {
         FocusTimerGlyph(size: 16)
       }
@@ -59,32 +59,63 @@ private struct FocusTimerLockScreenView: View {
   let context: ActivityViewContext<AlarmAttributes<FocusTaskAlarmMetadata>>
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 10) {
       HStack {
-        HStack(spacing: 8) {
-          FocusTimerGlyph(size: 22)
-          Text("Flow")
-            .font(.headline)
-        }
+        FocusTimerBrandView(iconSize: 22, font: .headline)
         Spacer()
-        if let progress = context.attributes.metadata?.pomodoroProgress, !progress.isEmpty {
-          Text(progress)
-            .font(.headline)
-            .monospacedDigit()
-        }
+        FocusTimerProgressPill(progress: context.attributes.metadata?.pomodoroProgress)
       }
 
-      Text(context.attributes.metadata?.taskTitle ?? "")
-        .font(.subheadline)
-        .lineLimit(1)
-
       FocusTimerCountdownText(context: context, fallbackTitle: "Focus")
-        .font(.title2)
+        .font(.system(size: 34, weight: .semibold, design: .rounded))
         .monospacedDigit()
+        .foregroundStyle(.primary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.74)
+
+      Text(context.attributes.metadata?.taskTitle ?? "Focus")
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
     }
-    .padding()
+    .padding(.horizontal, 18)
+    .padding(.vertical, 14)
     .activityBackgroundTint(FocusTimerStyle.primary.opacity(0.16))
     .activitySystemActionForegroundColor(FocusTimerStyle.primary)
+  }
+}
+
+@available(iOS 26.0, *)
+private struct FocusTimerExpandedIslandView: View {
+  let context: ActivityViewContext<AlarmAttributes<FocusTaskAlarmMetadata>>
+
+  var body: some View {
+    VStack(spacing: 10) {
+      FocusTimerCountdownText(context: context, fallbackTitle: "Focus")
+        .font(.system(size: 36, weight: .semibold, design: .rounded))
+        .monospacedDigit()
+        .foregroundStyle(.white)
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .frame(maxWidth: .infinity, alignment: .center)
+
+      HStack(spacing: 10) {
+        Text(context.attributes.metadata?.taskTitle ?? "Focus")
+          .font(.caption)
+          .foregroundStyle(.white.opacity(0.72))
+          .lineLimit(1)
+
+        Spacer(minLength: 8)
+
+        FocusTimerPrimaryControlButton(context: context)
+        Button(intent: FocusTimerStopIntent(alarmId: context.attributes.metadata?.alarmId ?? "")) {
+          FocusTimerControlIcon(systemName: "stop.fill")
+        }
+        .buttonStyle(.plain)
+      }
+    }
+    .padding(.top, 2)
+    .padding(.horizontal, FocusTimerStyle.expandedEdgeInset)
   }
 }
 
@@ -122,6 +153,76 @@ private struct FocusTimerCountdownText: View {
   }
 }
 
+private struct FocusTimerBrandView: View {
+  let iconSize: CGFloat
+  let font: Font
+
+  var body: some View {
+    HStack(spacing: 7) {
+      FocusTimerGlyph(size: iconSize)
+      Text("Flow")
+        .font(font)
+        .fontWeight(.semibold)
+        .lineLimit(1)
+    }
+  }
+}
+
+private struct FocusTimerProgressPill: View {
+  let progress: String?
+
+  var body: some View {
+    if let progress, !progress.isEmpty {
+      Text(progress)
+        .font(.caption.weight(.semibold))
+        .monospacedDigit()
+        .foregroundStyle(FocusTimerStyle.primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(FocusTimerStyle.primary.opacity(0.16), in: Capsule())
+    }
+  }
+}
+
+@available(iOS 26.0, *)
+private struct FocusTimerPrimaryControlButton: View {
+  let context: ActivityViewContext<AlarmAttributes<FocusTaskAlarmMetadata>>
+
+  var body: some View {
+    if isPaused {
+      Button(intent: FocusTimerResumeIntent(alarmId: context.attributes.metadata?.alarmId ?? "")) {
+        FocusTimerControlIcon(systemName: "play.fill")
+      }
+      .buttonStyle(.plain)
+    } else {
+      Button(intent: FocusTimerPauseIntent(alarmId: context.attributes.metadata?.alarmId ?? "")) {
+        FocusTimerControlIcon(systemName: "pause.fill")
+      }
+      .buttonStyle(.plain)
+    }
+  }
+
+  private var isPaused: Bool {
+    if case .paused = context.state.mode {
+      return true
+    }
+    return false
+  }
+}
+
+private struct FocusTimerControlIcon: View {
+  let systemName: String
+
+  var body: some View {
+    Image(systemName: systemName)
+      .font(.caption.weight(.bold))
+      .foregroundStyle(.black.opacity(0.86))
+      .frame(width: 26, height: 26)
+      .background(FocusTimerStyle.primary, in: Circle())
+      .accessibilityHidden(true)
+  }
+}
+
 private struct FocusTimerGlyph: View {
   let size: CGFloat
 
@@ -152,6 +253,80 @@ private struct FocusTimerGlyph: View {
 
 private enum FocusTimerStyle {
   static let primary = Color(red: 0.67, green: 0.78, blue: 1.0)
+  static let compactEdgeOffset: CGFloat = 4
+  static let expandedEdgeInset: CGFloat = 8
+}
+
+@available(iOS 26.0, *)
+private struct FocusTimerPauseIntent: LiveActivityIntent {
+  static var title: LocalizedStringResource = "Pause timer"
+
+  @Parameter(title: "Alarm ID")
+  var alarmId: String
+
+  init() {
+    alarmId = ""
+  }
+
+  init(alarmId: String) {
+    self.alarmId = alarmId
+  }
+
+  func perform() async throws -> some IntentResult {
+    guard let id = UUID(uuidString: alarmId) else {
+      return .result()
+    }
+    try AlarmManager.shared.pause(id: id)
+    return .result()
+  }
+}
+
+@available(iOS 26.0, *)
+private struct FocusTimerResumeIntent: LiveActivityIntent {
+  static var title: LocalizedStringResource = "Resume timer"
+
+  @Parameter(title: "Alarm ID")
+  var alarmId: String
+
+  init() {
+    alarmId = ""
+  }
+
+  init(alarmId: String) {
+    self.alarmId = alarmId
+  }
+
+  func perform() async throws -> some IntentResult {
+    guard let id = UUID(uuidString: alarmId) else {
+      return .result()
+    }
+    try AlarmManager.shared.resume(id: id)
+    return .result()
+  }
+}
+
+@available(iOS 26.0, *)
+private struct FocusTimerStopIntent: LiveActivityIntent {
+  static var title: LocalizedStringResource = "Stop timer"
+
+  @Parameter(title: "Alarm ID")
+  var alarmId: String
+
+  init() {
+    alarmId = ""
+  }
+
+  init(alarmId: String) {
+    self.alarmId = alarmId
+  }
+
+  func perform() async throws -> some IntentResult {
+    guard let id = UUID(uuidString: alarmId) else {
+      return .result()
+    }
+    try AlarmManager.shared.stop(id: id)
+    return .result()
+  }
 }
 
 @main
