@@ -243,6 +243,22 @@ class TaskProvider with ChangeNotifier {
     await _saveTasks();
   }
 
+  Future<void> deleteAiSessionTasks(String sessionId) async {
+    final String normalizedSessionId = sessionId.trim();
+    if (normalizedSessionId.isEmpty) {
+      return;
+    }
+
+    final List<String> taskIds = _tasks
+        .where((Task task) => task.aiSessionId == normalizedSessionId)
+        .map((Task task) => task.id)
+        .toList(growable: false);
+
+    for (final String taskId in taskIds) {
+      await deleteTask(taskId);
+    }
+  }
+
   Future<void> toggleTaskStatus(String taskId) async {
     final int index = _tasks.indexWhere((Task task) => task.id == taskId);
     if (index == -1) {

@@ -1644,13 +1644,17 @@ class TasksScreen extends ConsumerWidget {
     }
 
     final notifier = ref.read(taskProvider.notifier);
-    final currentTaskId = ref.read(taskProvider).currentTaskId;
-    final containsCurrent = group.tasks.any((task) => task.id == currentTaskId);
-    if (containsCurrent) {
-      await notifier.setCurrentTask(null);
+    final sessionId = group.sessionId?.trim();
+    if (sessionId != null && sessionId.isNotEmpty) {
+      await notifier.deleteAiSessionTasks(sessionId);
+      return;
     }
 
+    final currentTaskId = ref.read(taskProvider).currentTaskId;
     for (final task in group.tasks) {
+      if (task.id == currentTaskId) {
+        await notifier.setCurrentTask(null);
+      }
       await notifier.deleteTask(task.id);
     }
   }

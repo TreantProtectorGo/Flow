@@ -96,10 +96,6 @@ private struct FocusTimerExpandedIslandView: View {
         Spacer(minLength: 8)
 
         FocusTimerPrimaryControlButton(context: context)
-        Button(intent: FocusTimerStopIntent(alarmId: context.attributes.metadata?.alarmId ?? "")) {
-          FocusTimerControlIcon(systemName: "stop.fill")
-        }
-        .buttonStyle(.plain)
       }
     }
     .padding(.top, 2)

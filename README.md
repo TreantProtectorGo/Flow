@@ -125,6 +125,34 @@ Release builds must provide a real backend URL:
 flutter build ipa --release --dart-define=API_BASE_URL=https://your-api-domain.com
 ```
 
+### Release to the App Store
+
+Current app version: `1.0.4+6`
+
+1. Verify the release build locally:
+
+```bash
+flutter analyze
+flutter test
+flutter build ipa --release --dart-define=API_BASE_URL=https://your-api-domain.com
+```
+
+2. Archive with Xcode:
+
+```bash
+open ios/Runner.xcworkspace
+```
+
+In Xcode, select the `Runner` scheme, choose `Any iOS Device (arm64)` or a connected iPhone as the run destination, then use `Product > Archive`. When the archive finishes, Xcode opens Organizer. Select the archive, then choose `Distribute App > App Store Connect > Upload`.
+
+3. Create the new App Store version:
+
+In App Store Connect, open `Flow - AI Focus Planner`, add a new iOS version `1.0.4`, enter the release notes and metadata, then save.
+
+4. Attach the processed build and submit:
+
+Wait until the uploaded build finishes processing in App Store Connect, choose build `1.0.4 (6)` for the new version, complete any compliance questions, then submit the version to App Review.
+
 ### Testing
 
 ```bash
