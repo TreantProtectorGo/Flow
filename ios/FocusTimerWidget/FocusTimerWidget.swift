@@ -35,8 +35,7 @@ struct FocusTimerLiveActivityWidget: Widget {
           FocusTimerExpandedIslandView(context: context)
         }
       } compactLeading: {
-        FocusTimerGlyph(size: 18)
-          .offset(x: FocusTimerStyle.compactEdgeOffset)
+        FocusTimerGlyph(size: 15)
       } compactTrailing: {
         FocusTimerCountdownText(context: context, fallbackTitle: nil)
           .font(.caption.weight(.semibold))
@@ -45,7 +44,6 @@ struct FocusTimerLiveActivityWidget: Widget {
           .lineLimit(1)
           .minimumScaleFactor(0.8)
           .frame(width: 48, alignment: .trailing)
-          .offset(x: -FocusTimerStyle.compactEdgeOffset)
       } minimal: {
         FocusTimerGlyph(size: 16)
       }
@@ -72,11 +70,6 @@ private struct FocusTimerLockScreenView: View {
         .foregroundStyle(.primary)
         .lineLimit(1)
         .minimumScaleFactor(0.74)
-
-      Text(context.attributes.metadata?.taskTitle ?? "Focus")
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
     }
     .padding(.horizontal, 18)
     .padding(.vertical, 14)
@@ -100,11 +93,6 @@ private struct FocusTimerExpandedIslandView: View {
         .frame(maxWidth: .infinity, alignment: .center)
 
       HStack(spacing: 10) {
-        Text(context.attributes.metadata?.taskTitle ?? "Focus")
-          .font(.caption)
-          .foregroundStyle(.white.opacity(0.72))
-          .lineLimit(1)
-
         Spacer(minLength: 8)
 
         FocusTimerPrimaryControlButton(context: context)
@@ -253,7 +241,6 @@ private struct FocusTimerGlyph: View {
 
 private enum FocusTimerStyle {
   static let primary = Color(red: 0.67, green: 0.78, blue: 1.0)
-  static let compactEdgeOffset: CGFloat = 4
   static let expandedEdgeInset: CGFloat = 8
 }
 

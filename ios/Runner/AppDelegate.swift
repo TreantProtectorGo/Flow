@@ -305,7 +305,6 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
       }
 
       let title = phase["alertTitle"] as? String ?? taskTitle
-      let body = phase["alertBody"] as? String ?? ""
       let payloadType = phase["payloadType"] as? String ?? "phaseEnd"
       let completed = (phase["completedPomodorosAtEnd"] as? NSNumber)?.intValue ?? 0
       let total = (phase["totalPomodoros"] as? NSNumber)?.intValue ?? 0
@@ -337,7 +336,7 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
         continue
       }
 
-      let countdown = AlarmPresentation.Countdown(title: localizedResource(body.isEmpty ? taskTitle : body), pauseButton: pauseButton)
+      let countdown = AlarmPresentation.Countdown(title: localizedResource("Flow"), pauseButton: pauseButton)
       let paused = AlarmPresentation.Paused(title: localizedResource("Timer paused"), resumeButton: resumeButton)
       let presentation = AlarmPresentation(alert: alert, countdown: countdown, paused: paused)
       let metadata = FocusTaskAlarmMetadata(
