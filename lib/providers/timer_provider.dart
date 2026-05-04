@@ -76,6 +76,8 @@ class TimerProvider with ChangeNotifier {
   // Track current pomodoro session start time and ID
   DateTime? _currentSessionStartTime;
   String? _currentSessionId;
+  String? _activeSystemTimelineId;
+  bool _isStandaloneTimerRun = false;
 
   TimerProvider(
     this._ref, {
@@ -172,6 +174,8 @@ class TimerProvider with ChangeNotifier {
     if (_currentSessionStartTime == null && _mode == TimerMode.focus) {
       _currentSessionStartTime = DateTime.now();
       _currentSessionId = DateTime.now().millisecondsSinceEpoch.toString();
+      _isStandaloneTimerRun =
+          _ref.read(taskProvider.notifier).currentTask == null;
       debugPrint(
         '⏱️ [TIMER] Starting new pomodoro session (ID: $_currentSessionId)',
       );
@@ -205,6 +209,7 @@ class TimerProvider with ChangeNotifier {
     _timer?.cancel();
     await _cancelSystemTimelineForCurrentTask();
     _state = TimerState.stopped;
+    _isStandaloneTimerRun = false;
 
     // If in focus mode and has start time, record as incomplete session
     if (_mode == TimerMode.focus && _currentSessionStartTime != null) {
@@ -308,6 +313,15 @@ class TimerProvider with ChangeNotifier {
       // Break ended, return to focus mode
       _mode = TimerMode.focus;
       _currentSession++;
+
+      if (_isStandaloneTimerRun) {
+        _isStandaloneTimerRun = false;
+        _activeSystemTimelineId = null;
+        _updateTimeForCurrentMode();
+        _saveSettings();
+        notifyListeners();
+        return;
+      }
     }
 
     _updateTimeForCurrentMode();
@@ -417,33 +431,52 @@ class TimerProvider with ChangeNotifier {
   Future<void> _scheduleSystemTimelineForCurrentTask() async {
     final Task? currentTask = _ref.read(taskProvider.notifier).currentTask;
     final DateTime? startAt = _currentSessionStartTime;
-    if (currentTask == null || startAt == null || _mode != TimerMode.focus) {
+    if (startAt == null || _mode != TimerMode.focus) {
       return;
     }
 
-    final Task? nextTask = _ref
-        .read(taskProvider.notifier)
-        .findNextIncompleteTaskAfter(currentTask.id);
     final NotificationStrings strings = _ref.read(notificationStringsProvider);
-    final int longBreakFrequency = _ref
-        .read(settingsProvider)
-        .longBreakFrequency;
-    final TaskTimerPlan plan =
-        TaskTimerPlan.create(
-          task: currentTask,
-          startAt: startAt,
-          focusMinutes: _focusTimeInMinutes,
-          shortBreakMinutes: _shortBreakTimeInMinutes,
-          longBreakMinutes: _longBreakTimeInMinutes,
-          longBreakFrequency: longBreakFrequency,
-          nextTaskId: nextTask?.id,
-          nextTaskTitle: nextTask?.title,
-          firstFocusSeconds: _timeLeftInSeconds,
-        ).withAlertText(
-          (TaskTimerPhase phase) => _phaseAlertTitle(phase, strings),
-          (TaskTimerPhase phase) => _phaseAlertBody(phase, strings),
-        );
+    final TaskTimerPlan plan;
+    if (currentTask == null) {
+      final String timelineId =
+          'standalone:${_currentSessionId ?? startAt.millisecondsSinceEpoch}';
+      plan =
+          TaskTimerPlan.createStandalone(
+            id: timelineId,
+            title: strings.pomodoroMode,
+            startAt: startAt,
+            focusMinutes: _focusTimeInMinutes,
+            shortBreakMinutes: _shortBreakTimeInMinutes,
+            firstFocusSeconds: _timeLeftInSeconds,
+          ).withAlertText(
+            (TaskTimerPhase phase) => _phaseAlertTitle(phase, strings),
+            (TaskTimerPhase phase) => _phaseAlertBody(phase, strings),
+          );
+    } else {
+      final Task? nextTask = _ref
+          .read(taskProvider.notifier)
+          .findNextIncompleteTaskAfter(currentTask.id);
+      final int longBreakFrequency = _ref
+          .read(settingsProvider)
+          .longBreakFrequency;
+      plan =
+          TaskTimerPlan.create(
+            task: currentTask,
+            startAt: startAt,
+            focusMinutes: _focusTimeInMinutes,
+            shortBreakMinutes: _shortBreakTimeInMinutes,
+            longBreakMinutes: _longBreakTimeInMinutes,
+            longBreakFrequency: longBreakFrequency,
+            nextTaskId: nextTask?.id,
+            nextTaskTitle: nextTask?.title,
+            firstFocusSeconds: _timeLeftInSeconds,
+          ).withAlertText(
+            (TaskTimerPhase phase) => _phaseAlertTitle(phase, strings),
+            (TaskTimerPhase phase) => _phaseAlertBody(phase, strings),
+          );
+    }
 
+    _activeSystemTimelineId = plan.taskId;
     await _ref
         .read(taskTimerSystemSchedulerProvider)
         .scheduleTaskTimeline(plan);
@@ -451,12 +484,17 @@ class TimerProvider with ChangeNotifier {
 
   Future<void> _cancelSystemTimelineForCurrentTask({String? taskId}) async {
     final String? id =
-        taskId ?? _ref.read(taskProvider.notifier).currentTask?.id;
+        taskId ??
+        _activeSystemTimelineId ??
+        _ref.read(taskProvider.notifier).currentTask?.id;
     if (id == null) {
       return;
     }
 
     await _ref.read(taskTimerSystemSchedulerProvider).cancelTaskTimeline(id);
+    if (_activeSystemTimelineId == id) {
+      _activeSystemTimelineId = null;
+    }
   }
 
   Future<void> _rescheduleSystemTimelineForCurrentTask() async {
@@ -484,6 +522,8 @@ class TimerProvider with ChangeNotifier {
       case TaskTimerPayloadType.taskComplete:
       case TaskTimerPayloadType.nextTaskPrompt:
         return strings.taskCompleteTitle;
+      case TaskTimerPayloadType.standaloneTimerComplete:
+        return strings.breakCompleteTitle;
     }
   }
 
@@ -518,6 +558,8 @@ class TimerProvider with ChangeNotifier {
                   ?.title ??
               '',
         );
+      case TaskTimerPayloadType.standaloneTimerComplete:
+        return strings.breakCompleteBody;
     }
   }
 

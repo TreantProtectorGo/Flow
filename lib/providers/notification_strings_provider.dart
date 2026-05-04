@@ -51,6 +51,7 @@ class NotificationStrings {
       _l10n.notificationTaskReminderChannelDescription;
   String get shortBreak => _l10n.shortBreak;
   String get longBreak => _l10n.longBreak;
+  String get pomodoroMode => _l10n.pomodoroMode;
   String pomodoroFocusCompleteTitle(int completed, int total) =>
       _l10n.notificationPomodoroFocusCompleteTitle(completed, total);
   String pomodoroStartBreakBody(String breakName) =>

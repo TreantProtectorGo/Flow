@@ -48,6 +48,10 @@ class FocusApp extends ConsumerWidget {
           if (payload.taskId.isEmpty) {
             return;
           }
+          if (payload.taskId.startsWith('standalone:')) {
+            _router.go('/timer');
+            return;
+          }
           if (payload.nextTaskId != null && payload.nextTaskId!.isNotEmpty) {
             ref
                 .read(pendingNextTaskPromptProvider.notifier)

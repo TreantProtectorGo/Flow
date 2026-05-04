@@ -4,7 +4,13 @@ import 'task.dart';
 
 enum TaskTimerPhaseKind { focus, shortBreak, longBreak }
 
-enum TaskTimerPayloadType { phaseStart, phaseEnd, taskComplete, nextTaskPrompt }
+enum TaskTimerPayloadType {
+  phaseStart,
+  phaseEnd,
+  taskComplete,
+  nextTaskPrompt,
+  standaloneTimerComplete,
+}
 
 class TaskTimerPhase {
   final int phaseIndex;
@@ -165,6 +171,58 @@ class TaskTimerPlan {
       nextTaskTitle: nextTaskTitle,
       startAt: startAt,
       phases: phases,
+    );
+  }
+
+  static TaskTimerPlan createStandalone({
+    required String id,
+    required String title,
+    required DateTime startAt,
+    required int focusMinutes,
+    required int shortBreakMinutes,
+    int? firstFocusSeconds,
+  }) {
+    final int focusSeconds = firstFocusSeconds != null
+        ? math.max(1, firstFocusSeconds)
+        : math.max(1, focusMinutes * 60);
+    final DateTime focusEnd = startAt.add(Duration(seconds: focusSeconds));
+    final DateTime breakEnd = focusEnd.add(
+      Duration(seconds: math.max(1, shortBreakMinutes * 60)),
+    );
+
+    return TaskTimerPlan(
+      taskId: id,
+      taskTitle: title,
+      sectionId: null,
+      nextTaskId: null,
+      nextTaskTitle: null,
+      startAt: startAt,
+      phases: <TaskTimerPhase>[
+        TaskTimerPhase(
+          phaseIndex: 0,
+          kind: TaskTimerPhaseKind.focus,
+          pomodoroIndex: 1,
+          startAt: startAt,
+          endAt: focusEnd,
+          completedPomodorosAtEnd: 1,
+          totalPomodoros: 1,
+          alertTitle: '',
+          alertBody: '',
+          payloadType: TaskTimerPayloadType.phaseEnd,
+        ),
+        TaskTimerPhase(
+          phaseIndex: 1,
+          kind: TaskTimerPhaseKind.shortBreak,
+          pomodoroIndex: 1,
+          startAt: focusEnd,
+          endAt: breakEnd,
+          completedPomodorosAtEnd: 1,
+          totalPomodoros: 1,
+          alertTitle: '',
+          alertBody: '',
+          payloadType: TaskTimerPayloadType.standaloneTimerComplete,
+        ),
+      ],
     );
   }
 

@@ -80,5 +80,38 @@ void main() {
       ]);
       expect(plan.endsAt, DateTime(2026, 4, 19, 15, 13));
     });
+
+    test('generates standalone focus then short break timeline', () {
+      final DateTime startAt = DateTime(2026, 4, 20, 23, 2);
+
+      final TaskTimerPlan plan = TaskTimerPlan.createStandalone(
+        id: 'standalone:123',
+        title: 'Pomodoro',
+        startAt: startAt,
+        focusMinutes: 25,
+        shortBreakMinutes: 5,
+      );
+
+      expect(plan.taskId, 'standalone:123');
+      expect(plan.nextTaskId, isNull);
+      expect(
+        plan.phases.map((TaskTimerPhase phase) => phase.kind),
+        <TaskTimerPhaseKind>[
+          TaskTimerPhaseKind.focus,
+          TaskTimerPhaseKind.shortBreak,
+        ],
+      );
+      expect(
+        plan.phases.map((TaskTimerPhase phase) => phase.payloadType),
+        <TaskTimerPayloadType>[
+          TaskTimerPayloadType.phaseEnd,
+          TaskTimerPayloadType.standaloneTimerComplete,
+        ],
+      );
+      expect(plan.phases.map((TaskTimerPhase phase) => phase.endAt), <DateTime>[
+        DateTime(2026, 4, 20, 23, 27),
+        DateTime(2026, 4, 20, 23, 32),
+      ]);
+    });
   });
 }

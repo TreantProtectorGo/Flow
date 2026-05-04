@@ -57,6 +57,7 @@ class _FakeFocusRepository implements FocusRepository {
 
 class _FakeNotificationClient implements NotificationClient {
   final List<String> canceledTaskIds = <String>[];
+  int breakCompleteNotifications = 0;
 
   @override
   Future<void> cancel(int id) async {}
@@ -100,7 +101,9 @@ class _FakeNotificationClient implements NotificationClient {
     required String body,
     required String channelName,
     required String channelDescription,
-  }) async {}
+  }) async {
+    breakCompleteNotifications += 1;
+  }
 
   @override
   Future<void> showFocusCompleteNotification({
@@ -318,5 +321,76 @@ void main() {
     expect(systemScheduler.scheduledPlans.single.taskId, 'task-1');
     expect(systemScheduler.scheduledPlans.single.nextTaskId, 'task-2');
     expect(systemScheduler.scheduledPlans.single.phases, hasLength(3));
+  });
+
+  test(
+    'starting timer without a task schedules one focus and short break',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final _FakeFocusRepository repository = _FakeFocusRepository(
+        tasks: <Task>[],
+      );
+      final _FakeTaskTimerSystemScheduler systemScheduler =
+          _FakeTaskTimerSystemScheduler();
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          focusRepositoryProvider.overrideWithValue(repository),
+          notificationClientProvider.overrideWithValue(
+            _FakeNotificationClient(),
+          ),
+          taskTimerSystemSchedulerProvider.overrideWithValue(systemScheduler),
+          statisticsProvider.overrideWith(
+            (Ref ref) => _FakeStatisticsNotifier(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(taskProvider.notifier).reloadTasks();
+      await _flushMicrotasks();
+      container.read(timerProvider.notifier).startTimer();
+      await _flushMicrotasks();
+
+      expect(systemScheduler.scheduledPlans, hasLength(1));
+      final TaskTimerPlan plan = systemScheduler.scheduledPlans.single;
+      expect(plan.taskId, startsWith('standalone:'));
+      expect(plan.nextTaskId, isNull);
+      expect(
+        plan.phases.map((TaskTimerPhase phase) => phase.kind),
+        <TaskTimerPhaseKind>[
+          TaskTimerPhaseKind.focus,
+          TaskTimerPhaseKind.shortBreak,
+        ],
+      );
+    },
+  );
+
+  test('standalone timer stops after its short break completes', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final _FakeFocusRepository repository = _FakeFocusRepository(
+      tasks: <Task>[],
+    );
+    final _FakeNotificationClient notifications = _FakeNotificationClient();
+    final ProviderContainer container = ProviderContainer(
+      overrides: <Override>[
+        focusRepositoryProvider.overrideWithValue(repository),
+        notificationClientProvider.overrideWithValue(notifications),
+        statisticsProvider.overrideWith((Ref ref) => _FakeStatisticsNotifier()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(taskProvider.notifier).reloadTasks();
+    await _flushMicrotasks();
+    final TimerProvider timer = container.read(timerProvider.notifier);
+    timer.startTimer();
+    timer.skipTimer();
+    await _flushMicrotasks();
+    timer.skipTimer();
+    await _flushMicrotasks();
+
+    expect(timer.state, TimerState.stopped);
+    expect(timer.mode, TimerMode.focus);
+    expect(notifications.breakCompleteNotifications, 1);
   });
 }
