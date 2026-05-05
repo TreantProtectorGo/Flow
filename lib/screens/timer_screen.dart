@@ -448,9 +448,9 @@ class _TimerScreenState extends ConsumerState<TimerScreen>
             return Transform.scale(scale: scale, child: child);
           },
           child: FilledButton(
-            onPressed: () {
+            onPressed: () async {
               if (timerNotifier.isRunning) {
-                ref.read(timerProvider.notifier).pauseTimer();
+                await ref.read(timerProvider.notifier).pauseTimer();
               } else {
                 ref.read(timerProvider.notifier).startTimer();
               }
@@ -475,8 +475,8 @@ class _TimerScreenState extends ConsumerState<TimerScreen>
 
         // Skip button
         FilledButton.tonal(
-          onPressed: () {
-            ref.read(timerProvider.notifier).skipTimer();
+          onPressed: () async {
+            await ref.read(timerProvider.notifier).skipTimer();
           },
           style: FilledButton.styleFrom(minimumSize: const Size(80, 48)),
           child: Row(

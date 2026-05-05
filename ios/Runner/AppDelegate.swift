@@ -124,8 +124,9 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
         result(FlutterError(code: "BAD_ARGS", message: "Missing taskId", details: nil))
         return
       }
-      cancelTaskTimeline(taskId: taskId)
-      result(nil)
+      cancelTaskTimeline(taskId: taskId) {
+        result(nil)
+      }
     case "requestAuthorization":
       requestTaskTimerAuthorization(result: result)
     default:
@@ -168,61 +169,63 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
       return
     }
 
-    cancelTaskTimeline(taskId: taskId)
-
-    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] _, _ in
+    cancelTaskTimeline(taskId: taskId) { [weak self] in
       guard let self = self else { return }
 
+      UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] _, _ in
+        guard let self = self else { return }
+
 #if canImport(AlarmKit)
-      if #available(iOS 26.0, *) {
-        Task {
-          let alarmIdsByPhase = await self.scheduleAlarmKitTimeline(
-            taskId: taskId,
-            taskTitle: taskTitle,
-            sectionId: args["sectionId"] as? String,
-            nextTaskId: args["nextTaskId"] as? String,
-            phases: phases
-          )
-          UserDefaults.standard.set(
-            alarmIdsByPhase.values.map { $0.uuidString },
-            forKey: self.taskTimerAlarmIdsKey(taskId)
-          )
-          let alarmedPhaseIndexes = Set(alarmIdsByPhase.keys)
-          for phase in phases {
-            let phaseIndex = (phase["phaseIndex"] as? NSNumber)?.intValue ?? -1
-            if alarmedPhaseIndexes.contains(phaseIndex) {
-              continue
-            }
-            self.scheduleTaskTimerNotification(
+        if #available(iOS 26.0, *) {
+          Task {
+            let alarmIdsByPhase = await self.scheduleAlarmKitTimeline(
               taskId: taskId,
               taskTitle: taskTitle,
               sectionId: args["sectionId"] as? String,
               nextTaskId: args["nextTaskId"] as? String,
-              nextTaskTitle: args["nextTaskTitle"] as? String,
-              phase: phase
+              phases: phases
             )
+            await MainActor.run {
+              UserDefaults.standard.set(
+                alarmIdsByPhase.values.map { $0.uuidString },
+                forKey: self.taskTimerAlarmIdsKey(taskId)
+              )
+              let alarmedPhaseIndexes = Set(alarmIdsByPhase.keys)
+              for phase in phases {
+                let phaseIndex = (phase["phaseIndex"] as? NSNumber)?.intValue ?? -1
+                if alarmedPhaseIndexes.contains(phaseIndex) {
+                  continue
+                }
+                self.scheduleTaskTimerNotification(
+                  taskId: taskId,
+                  taskTitle: taskTitle,
+                  sectionId: args["sectionId"] as? String,
+                  nextTaskId: args["nextTaskId"] as? String,
+                  nextTaskTitle: args["nextTaskTitle"] as? String,
+                  phase: phase
+                )
+              }
+              result(nil)
+            }
           }
-          DispatchQueue.main.async {
-            result(nil)
-          }
+          return
         }
-        return
-      }
 #endif
 
-      for phase in phases {
-        self.scheduleTaskTimerNotification(
-          taskId: taskId,
-          taskTitle: taskTitle,
-          sectionId: args["sectionId"] as? String,
-          nextTaskId: args["nextTaskId"] as? String,
-          nextTaskTitle: args["nextTaskTitle"] as? String,
-          phase: phase
-        )
-      }
+        for phase in phases {
+          self.scheduleTaskTimerNotification(
+            taskId: taskId,
+            taskTitle: taskTitle,
+            sectionId: args["sectionId"] as? String,
+            nextTaskId: args["nextTaskId"] as? String,
+            nextTaskTitle: args["nextTaskTitle"] as? String,
+            phase: phase
+          )
+        }
 
-      DispatchQueue.main.async {
-        result(nil)
+        DispatchQueue.main.async {
+          result(nil)
+        }
       }
     }
   }
@@ -377,7 +380,7 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
   }
 #endif
 
-  private func cancelTaskTimeline(taskId: String) {
+  private func cancelTaskTimeline(taskId: String, completion: (() -> Void)? = nil) {
     UNUserNotificationCenter.current().getPendingNotificationRequests { [weak self] requests in
       guard let self = self else { return }
       let prefix = "\(self.taskTimerNotificationPrefix).\(taskId)."
@@ -385,8 +388,14 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
         .map { $0.identifier }
         .filter { $0.hasPrefix(prefix) }
       UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
+      self.cancelAlarmKitTimeline(taskId: taskId)
+      DispatchQueue.main.async {
+        completion?()
+      }
     }
+  }
 
+  private func cancelAlarmKitTimeline(taskId: String) {
 #if canImport(AlarmKit)
     if #available(iOS 26.0, *) {
       let key = taskTimerAlarmIdsKey(taskId)

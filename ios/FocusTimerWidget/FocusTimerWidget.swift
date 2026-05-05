@@ -2,6 +2,7 @@ import ActivityKit
 import AlarmKit
 import AppIntents
 import SwiftUI
+import UserNotifications
 import WidgetKit
 
 @available(iOS 26.0, *)
@@ -35,7 +36,8 @@ struct FocusTimerLiveActivityWidget: Widget {
           FocusTimerExpandedIslandView(context: context)
         }
       } compactLeading: {
-        FocusTimerGlyph(size: 15)
+        FocusTimerGlyph(size: 14)
+          .offset(y: 1.5)
       } compactTrailing: {
         FocusTimerCountdownText(context: context, fallbackTitle: nil)
           .font(.caption.weight(.semibold))
@@ -174,12 +176,22 @@ private struct FocusTimerPrimaryControlButton: View {
 
   var body: some View {
     if isPaused {
-      Button(intent: FocusTimerResumeIntent(alarmId: context.attributes.metadata?.alarmId ?? "")) {
+      Button(
+        intent: FocusTimerResumeIntent(
+          alarmId: context.attributes.metadata?.alarmId ?? "",
+          taskId: context.attributes.metadata?.taskId ?? ""
+        )
+      ) {
         FocusTimerControlIcon(systemName: "play.fill")
       }
       .buttonStyle(.plain)
     } else {
-      Button(intent: FocusTimerPauseIntent(alarmId: context.attributes.metadata?.alarmId ?? "")) {
+      Button(
+        intent: FocusTimerPauseIntent(
+          alarmId: context.attributes.metadata?.alarmId ?? "",
+          taskId: context.attributes.metadata?.taskId ?? ""
+        )
+      ) {
         FocusTimerControlIcon(systemName: "pause.fill")
       }
       .buttonStyle(.plain)
@@ -240,19 +252,48 @@ private enum FocusTimerStyle {
   static let expandedEdgeInset: CGFloat = 8
 }
 
+private enum FocusTimerSystemNotifications {
+  static let notificationPrefix = "focus.taskTimer"
+
+  static func cancelPendingNotifications(taskId: String) async {
+    guard !taskId.isEmpty else {
+      return
+    }
+
+    let identifiers = await withCheckedContinuation { continuation in
+      UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
+        let prefix = "\(notificationPrefix).\(taskId)."
+        continuation.resume(
+          returning: requests
+            .map(\.identifier)
+            .filter { $0.hasPrefix(prefix) }
+        )
+      }
+    }
+
+    UNUserNotificationCenter.current().removePendingNotificationRequests(
+      withIdentifiers: identifiers
+    )
+  }
+}
+
 @available(iOS 26.0, *)
-private struct FocusTimerPauseIntent: LiveActivityIntent {
+struct FocusTimerPauseIntent: LiveActivityIntent {
   static var title: LocalizedStringResource = "Pause timer"
 
   @Parameter(title: "Alarm ID")
   var alarmId: String
+  @Parameter(title: "Task ID")
+  var taskId: String
 
   init() {
     alarmId = ""
+    taskId = ""
   }
 
-  init(alarmId: String) {
+  init(alarmId: String, taskId: String) {
     self.alarmId = alarmId
+    self.taskId = taskId
   }
 
   func perform() async throws -> some IntentResult {
@@ -260,23 +301,28 @@ private struct FocusTimerPauseIntent: LiveActivityIntent {
       return .result()
     }
     try AlarmManager.shared.pause(id: id)
+    await FocusTimerSystemNotifications.cancelPendingNotifications(taskId: taskId)
     return .result()
   }
 }
 
 @available(iOS 26.0, *)
-private struct FocusTimerResumeIntent: LiveActivityIntent {
+struct FocusTimerResumeIntent: LiveActivityIntent {
   static var title: LocalizedStringResource = "Resume timer"
 
   @Parameter(title: "Alarm ID")
   var alarmId: String
+  @Parameter(title: "Task ID")
+  var taskId: String
 
   init() {
     alarmId = ""
+    taskId = ""
   }
 
-  init(alarmId: String) {
+  init(alarmId: String, taskId: String) {
     self.alarmId = alarmId
+    self.taskId = taskId
   }
 
   func perform() async throws -> some IntentResult {
@@ -289,18 +335,22 @@ private struct FocusTimerResumeIntent: LiveActivityIntent {
 }
 
 @available(iOS 26.0, *)
-private struct FocusTimerStopIntent: LiveActivityIntent {
+struct FocusTimerStopIntent: LiveActivityIntent {
   static var title: LocalizedStringResource = "Stop timer"
 
   @Parameter(title: "Alarm ID")
   var alarmId: String
+  @Parameter(title: "Task ID")
+  var taskId: String
 
   init() {
     alarmId = ""
+    taskId = ""
   }
 
-  init(alarmId: String) {
+  init(alarmId: String, taskId: String) {
     self.alarmId = alarmId
+    self.taskId = taskId
   }
 
   func perform() async throws -> some IntentResult {
@@ -308,6 +358,7 @@ private struct FocusTimerStopIntent: LiveActivityIntent {
       return .result()
     }
     try AlarmManager.shared.stop(id: id)
+    await FocusTimerSystemNotifications.cancelPendingNotifications(taskId: taskId)
     return .result()
   }
 }

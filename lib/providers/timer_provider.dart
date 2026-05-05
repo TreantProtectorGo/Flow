@@ -218,17 +218,18 @@ class TimerProvider with ChangeNotifier {
     _startTicker();
   }
 
-  void pauseTimer() {
+  Future<void> pauseTimer() async {
     if (_state != TimerState.running) return;
 
     _syncTimeLeftWithSystemClock();
     _timer?.cancel();
     _currentPhaseEndsAt = null;
     _state = TimerState.paused;
-    if (_mode == TimerMode.focus) {
-      unawaited(_cancelSystemTimelineForCurrentTask());
-    }
     notifyListeners();
+
+    if (_mode == TimerMode.focus) {
+      await _cancelSystemTimelineForCurrentTask();
+    }
   }
 
   Future<void> stopTimer() async {
@@ -272,10 +273,10 @@ class TimerProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void skipTimer() {
+  Future<void> skipTimer() async {
     _currentPhaseEndsAt = null;
-    unawaited(_cancelSystemTimelineForCurrentTask());
-    _onTimerComplete();
+    await _cancelSystemTimelineForCurrentTask();
+    await _onTimerComplete();
   }
 
   Future<void> _onTimerComplete() async {

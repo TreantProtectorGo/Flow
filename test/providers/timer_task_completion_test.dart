@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:focus/models/task.dart';
@@ -127,10 +129,14 @@ class _FakeNotificationClient implements NotificationClient {
 class _FakeTaskTimerSystemScheduler implements TaskTimerSystemScheduler {
   final List<TaskTimerPlan> scheduledPlans = <TaskTimerPlan>[];
   final List<String> canceledTaskIds = <String>[];
+  final List<String> operations = <String>[];
+  Completer<void>? cancelCompleter;
 
   @override
   Future<void> cancelTaskTimeline(String taskId) async {
+    operations.add('cancel:$taskId');
     canceledTaskIds.add(taskId);
+    await cancelCompleter?.future;
   }
 
   @override
@@ -138,11 +144,13 @@ class _FakeTaskTimerSystemScheduler implements TaskTimerSystemScheduler {
 
   @override
   Future<void> rescheduleTaskTimeline(TaskTimerPlan plan) async {
+    operations.add('reschedule:${plan.taskId}');
     scheduledPlans.add(plan);
   }
 
   @override
   Future<void> scheduleTaskTimeline(TaskTimerPlan plan) async {
+    operations.add('schedule:${plan.taskId}');
     scheduledPlans.add(plan);
   }
 }
@@ -531,7 +539,7 @@ void main() {
       final TimerProvider timer = container.read(timerProvider.notifier);
       timer.startTimer();
       await _flushMicrotasks();
-      timer.pauseTimer();
+      await timer.pauseTimer();
       await _flushMicrotasks();
       timer.startTimer();
       await _flushMicrotasks();
@@ -583,7 +591,7 @@ void main() {
     final TimerProvider timer = container.read(timerProvider.notifier);
     timer.startTimer();
     await _flushMicrotasks();
-    timer.pauseTimer();
+    await timer.pauseTimer();
     await _flushMicrotasks();
     timer.startTimer();
     await _flushMicrotasks();
@@ -667,5 +675,106 @@ void main() {
     expect(timer.state, TimerState.stopped);
     expect(timer.mode, TimerMode.focus);
     expect(notifications.breakCompleteNotifications, 1);
+  });
+
+  test('skip waits for current system timeline cancellation', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'currentTaskId': 'task-1',
+    });
+    final _FakeFocusRepository repository = _FakeFocusRepository(
+      tasks: <Task>[
+        Task(
+          id: 'task-1',
+          title: 'Build feature',
+          pomodoroCount: 2,
+          completedPomodoros: 0,
+          priority: TaskPriority.high,
+          status: TaskStatus.inProgress,
+          createdAt: DateTime(2026, 4, 19, 9, 1),
+        ),
+      ],
+    );
+    final _FakeTaskTimerSystemScheduler systemScheduler =
+        _FakeTaskTimerSystemScheduler()..cancelCompleter = Completer<void>();
+    final ProviderContainer container = ProviderContainer(
+      overrides: <Override>[
+        focusRepositoryProvider.overrideWithValue(repository),
+        notificationClientProvider.overrideWithValue(_FakeNotificationClient()),
+        taskTimerSystemSchedulerProvider.overrideWithValue(systemScheduler),
+        statisticsProvider.overrideWith((Ref ref) => _FakeStatisticsNotifier()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(taskProvider.notifier).reloadTasks();
+    await _flushMicrotasks();
+    final TimerProvider timer = container.read(timerProvider.notifier);
+    timer.startTimer();
+    await _flushMicrotasks();
+
+    final Future<void> skip = timer.skipTimer();
+    await _flushMicrotasks();
+
+    expect(systemScheduler.canceledTaskIds, <String>['task-1']);
+    expect(timer.state, TimerState.running);
+    expect(timer.mode, TimerMode.focus);
+
+    systemScheduler.cancelCompleter!.complete();
+    await skip;
+    await _flushMicrotasks();
+
+    expect(timer.state, TimerState.running);
+    expect(timer.mode, TimerMode.shortBreak);
+  });
+
+  test('pause waits for current system timeline cancellation', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'currentTaskId': 'task-1',
+    });
+    final _FakeFocusRepository repository = _FakeFocusRepository(
+      tasks: <Task>[
+        Task(
+          id: 'task-1',
+          title: 'Build feature',
+          pomodoroCount: 2,
+          completedPomodoros: 0,
+          priority: TaskPriority.high,
+          status: TaskStatus.inProgress,
+          createdAt: DateTime(2026, 4, 19, 9, 1),
+        ),
+      ],
+    );
+    final _FakeTaskTimerSystemScheduler systemScheduler =
+        _FakeTaskTimerSystemScheduler()..cancelCompleter = Completer<void>();
+    final ProviderContainer container = ProviderContainer(
+      overrides: <Override>[
+        focusRepositoryProvider.overrideWithValue(repository),
+        notificationClientProvider.overrideWithValue(_FakeNotificationClient()),
+        taskTimerSystemSchedulerProvider.overrideWithValue(systemScheduler),
+        statisticsProvider.overrideWith((Ref ref) => _FakeStatisticsNotifier()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(taskProvider.notifier).reloadTasks();
+    await _flushMicrotasks();
+    final TimerProvider timer = container.read(timerProvider.notifier);
+    timer.startTimer();
+    await _flushMicrotasks();
+
+    final Future<void> pause = timer.pauseTimer();
+    await _flushMicrotasks();
+
+    expect(timer.state, TimerState.paused);
+    expect(systemScheduler.canceledTaskIds, <String>['task-1']);
+    expect(systemScheduler.scheduledPlans, hasLength(1));
+
+    systemScheduler.cancelCompleter!.complete();
+    await pause;
+    timer.startTimer();
+    await _flushMicrotasks();
+
+    expect(systemScheduler.scheduledPlans, hasLength(2));
+    expect(systemScheduler.scheduledPlans.last.taskId, 'task-1');
   });
 }
