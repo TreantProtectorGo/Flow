@@ -198,6 +198,10 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
                 alarmIdsByPhase.values.map { $0.uuidString },
                 forKey: self.taskTimerAlarmIdsKey(taskId)
               )
+              UserDefaults(suiteName: self.taskTimerAppGroupIdentifier)?.set(
+                alarmIdsByPhase.values.map { $0.uuidString },
+                forKey: self.taskTimerAlarmIdsKey(taskId)
+              )
               let alarmedPhaseIndexes = Set(alarmIdsByPhase.keys)
               for phase in phases {
                 let phaseIndex = (phase["phaseIndex"] as? NSNumber)?.intValue ?? -1
@@ -407,7 +411,12 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
 #if canImport(AlarmKit)
     if #available(iOS 26.0, *) {
       let key = taskTimerAlarmIdsKey(taskId)
-      let alarmIdStrings = UserDefaults.standard.stringArray(forKey: key) ?? []
+      var alarmIdStrings = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+      if let sharedAlarmIdStrings = UserDefaults(
+        suiteName: taskTimerAppGroupIdentifier
+      )?.stringArray(forKey: key) {
+        alarmIdStrings.formUnion(sharedAlarmIdStrings)
+      }
       for alarmIdString in alarmIdStrings {
         guard let alarmId = UUID(uuidString: alarmIdString) else {
           continue
@@ -415,6 +424,7 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
         try? AlarmManager.shared.cancel(id: alarmId)
       }
       UserDefaults.standard.removeObject(forKey: key)
+      UserDefaults(suiteName: taskTimerAppGroupIdentifier)?.removeObject(forKey: key)
     }
 #endif
   }

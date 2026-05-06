@@ -37,7 +37,7 @@ struct FocusTimerLiveActivityWidget: Widget {
         }
       } compactLeading: {
         FocusTimerGlyph(size: 14)
-          .offset(y: 1.5)
+          .offset(x: -0.3, y: 1)
       } compactTrailing: {
         FocusTimerCountdownText(context: context, fallbackTitle: nil)
           .font(.caption.weight(.semibold))
