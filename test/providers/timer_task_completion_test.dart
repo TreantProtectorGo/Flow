@@ -777,4 +777,100 @@ void main() {
     expect(systemScheduler.scheduledPlans, hasLength(2));
     expect(systemScheduler.scheduledPlans.last.taskId, 'task-1');
   });
+
+  test(
+    'native pause event syncs task timer without canceling timeline',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'currentTaskId': 'task-1',
+      });
+      final _FakeFocusRepository repository = _FakeFocusRepository(
+        tasks: <Task>[
+          Task(
+            id: 'task-1',
+            title: 'Build feature',
+            pomodoroCount: 2,
+            completedPomodoros: 0,
+            priority: TaskPriority.high,
+            status: TaskStatus.inProgress,
+            createdAt: DateTime(2026, 4, 19, 9, 1),
+          ),
+        ],
+      );
+      final _FakeTaskTimerSystemScheduler systemScheduler =
+          _FakeTaskTimerSystemScheduler();
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          focusRepositoryProvider.overrideWithValue(repository),
+          notificationClientProvider.overrideWithValue(
+            _FakeNotificationClient(),
+          ),
+          taskTimerSystemSchedulerProvider.overrideWithValue(systemScheduler),
+          statisticsProvider.overrideWith(
+            (Ref ref) => _FakeStatisticsNotifier(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(taskProvider.notifier).reloadTasks();
+      await _flushMicrotasks();
+      final TimerProvider timer = container.read(timerProvider.notifier);
+      timer.startTimer();
+      await _flushMicrotasks();
+
+      timer.applySystemControlEvent(
+        TaskTimerSystemControlEvent(
+          action: 'pause',
+          taskId: 'task-1',
+          alarmId: 'alarm-1',
+          remainingSeconds: 90,
+          occurredAt: DateTime(2026, 4, 20, 10, 1),
+        ),
+      );
+
+      expect(timer.state, TimerState.paused);
+      expect(timer.timeLeftInSeconds, 90);
+      expect(systemScheduler.canceledTaskIds, isEmpty);
+    },
+  );
+
+  test(
+    'native standalone pause event restores timer after cold start',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final _FakeFocusRepository repository = _FakeFocusRepository(
+        tasks: <Task>[],
+      );
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          focusRepositoryProvider.overrideWithValue(repository),
+          notificationClientProvider.overrideWithValue(
+            _FakeNotificationClient(),
+          ),
+          statisticsProvider.overrideWith(
+            (Ref ref) => _FakeStatisticsNotifier(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(taskProvider.notifier).reloadTasks();
+      await _flushMicrotasks();
+      final TimerProvider timer = container.read(timerProvider.notifier);
+
+      timer.applySystemControlEvent(
+        TaskTimerSystemControlEvent(
+          action: 'pause',
+          taskId: 'standalone:123',
+          alarmId: 'alarm-1',
+          remainingSeconds: 90,
+          occurredAt: DateTime(2026, 4, 20, 10, 1),
+        ),
+      );
+
+      expect(timer.state, TimerState.paused);
+      expect(timer.timeLeftInSeconds, 90);
+    },
+  );
 }

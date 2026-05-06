@@ -38,6 +38,35 @@ class TaskTimerSystemPayload {
   }
 }
 
+class TaskTimerSystemControlEvent {
+  final String action;
+  final String taskId;
+  final String alarmId;
+  final int? remainingSeconds;
+  final DateTime occurredAt;
+
+  const TaskTimerSystemControlEvent({
+    required this.action,
+    required this.taskId,
+    required this.alarmId,
+    required this.remainingSeconds,
+    required this.occurredAt,
+  });
+
+  factory TaskTimerSystemControlEvent.fromMap(Map<Object?, Object?> map) {
+    final double occurredAtMillis =
+        (map['occurredAt'] as num?)?.toDouble() ??
+        DateTime.now().millisecondsSinceEpoch.toDouble();
+    return TaskTimerSystemControlEvent(
+      action: map['action'] as String? ?? '',
+      taskId: map['taskId'] as String? ?? '',
+      alarmId: map['alarmId'] as String? ?? '',
+      remainingSeconds: (map['remainingSeconds'] as num?)?.toInt(),
+      occurredAt: DateTime.fromMillisecondsSinceEpoch(occurredAtMillis.round()),
+    );
+  }
+}
+
 abstract class TaskTimerSystemScheduler {
   Future<void> initialize();
 
@@ -58,6 +87,12 @@ final StreamProvider<TaskTimerSystemPayload> taskTimerSystemPayloadProvider =
       return PlatformTaskTimerSystemScheduler.instance.payloads;
     });
 
+final StreamProvider<TaskTimerSystemControlEvent>
+taskTimerSystemControlEventProvider =
+    StreamProvider<TaskTimerSystemControlEvent>((Ref ref) {
+      return PlatformTaskTimerSystemScheduler.instance.controlEvents;
+    });
+
 class PlatformTaskTimerSystemScheduler implements TaskTimerSystemScheduler {
   static const MethodChannel _channel = MethodChannel(
     'focus/task_timer_system',
@@ -68,11 +103,15 @@ class PlatformTaskTimerSystemScheduler implements TaskTimerSystemScheduler {
 
   final StreamController<TaskTimerSystemPayload> _payloadController =
       StreamController<TaskTimerSystemPayload>.broadcast();
+  final StreamController<TaskTimerSystemControlEvent> _controlEventController =
+      StreamController<TaskTimerSystemControlEvent>.broadcast();
   bool _initialized = false;
 
   PlatformTaskTimerSystemScheduler._();
 
   Stream<TaskTimerSystemPayload> get payloads => _payloadController.stream;
+  Stream<TaskTimerSystemControlEvent> get controlEvents =>
+      _controlEventController.stream;
 
   @override
   Future<void> initialize() async {
@@ -124,13 +163,22 @@ class PlatformTaskTimerSystemScheduler implements TaskTimerSystemScheduler {
   }
 
   Future<void> _handleMethodCall(MethodCall call) async {
-    if (call.method != 'taskTimerPayload') {
-      return;
-    }
-
     final Object? arguments = call.arguments;
-    if (arguments is Map<Object?, Object?>) {
-      _payloadController.add(TaskTimerSystemPayload.fromMap(arguments));
+    switch (call.method) {
+      case 'taskTimerPayload':
+        if (arguments is Map<Object?, Object?>) {
+          _payloadController.add(TaskTimerSystemPayload.fromMap(arguments));
+        }
+      case 'taskTimerControlEvents':
+        if (arguments is List<Object?>) {
+          for (final Object? event in arguments) {
+            if (event is Map<Object?, Object?>) {
+              _controlEventController.add(
+                TaskTimerSystemControlEvent.fromMap(event),
+              );
+            }
+          }
+        }
     }
   }
 }

@@ -29,6 +29,8 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
   private var pendingCalendarResult: FlutterResult?
   private var taskTimerChannel: FlutterMethodChannel?
   private var pendingTaskTimerPayload: [String: Any]?
+  private let taskTimerAppGroupIdentifier = "group.com.shape.focus"
+  private let taskTimerControlEventsKey = "focus.taskTimer.controlEvents"
   private let taskTimerNotificationPrefix = "focus.taskTimer"
   private let taskTimerAlarmIdsKeyPrefix = "focus.taskTimer.alarmIds"
 
@@ -53,6 +55,7 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
         self?.handleTaskTimerCall(call, result: result)
       }
       flushPendingTaskTimerPayload()
+      flushPendingTaskTimerControlEvents()
 
       let channel = FlutterMethodChannel(
         name: "focus/calendar",
@@ -106,6 +109,11 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  override func applicationDidBecomeActive(_ application: UIApplication) {
+    super.applicationDidBecomeActive(application)
+    flushPendingTaskTimerControlEvents()
   }
 
   private func handleTaskTimerCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -450,6 +458,20 @@ struct FocusTaskAlarmMetadata: AlarmMetadata {
     }
     pendingTaskTimerPayload = nil
     forwardTaskTimerPayload(payload)
+  }
+
+  private func flushPendingTaskTimerControlEvents() {
+    guard
+      let channel = taskTimerChannel,
+      let defaults = UserDefaults(suiteName: taskTimerAppGroupIdentifier),
+      let events = defaults.array(forKey: taskTimerControlEventsKey) as? [[String: Any]],
+      !events.isEmpty
+    else {
+      return
+    }
+
+    defaults.removeObject(forKey: taskTimerControlEventsKey)
+    channel.invokeMethod("taskTimerControlEvents", arguments: events)
   }
 
   override func userNotificationCenter(

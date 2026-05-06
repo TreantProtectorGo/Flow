@@ -16,6 +16,7 @@ import 'services/notification_service.dart';
 import 'services/firebase_service.dart';
 import 'services/task_timer_system_scheduler.dart';
 import 'providers/task_completion_event_provider.dart';
+import 'providers/timer_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -61,6 +62,18 @@ class FocusApp extends ConsumerWidget {
             );
           }
           _router.go('/tasks');
+        });
+      },
+    );
+
+    ref.listen<AsyncValue<TaskTimerSystemControlEvent>>(
+      taskTimerSystemControlEventProvider,
+      (
+        AsyncValue<TaskTimerSystemControlEvent>? previous,
+        AsyncValue<TaskTimerSystemControlEvent> next,
+      ) {
+        next.whenData((TaskTimerSystemControlEvent event) {
+          ref.read(timerProvider.notifier).applySystemControlEvent(event);
         });
       },
     );

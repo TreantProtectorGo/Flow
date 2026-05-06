@@ -112,8 +112,8 @@ private struct FocusTimerCountdownText: View {
 
   @ViewBuilder
   var body: some View {
-    if let fireDate {
-      Text(timerInterval: Date()...fireDate, countsDown: true)
+    if let timerInterval {
+      Text(timerInterval: timerInterval, countsDown: true, showsHours: false)
     } else if let fallbackTitle {
       Text(fallbackTitle)
     } else {
@@ -121,16 +121,19 @@ private struct FocusTimerCountdownText: View {
     }
   }
 
-  private var fireDate: Date? {
+  private var timerInterval: ClosedRange<Date>? {
     switch context.state.mode {
     case .countdown(let countdown):
-      return countdown.fireDate
+      return countdown.startDate...countdown.focusTimerEndDate
     case .alert(let alert):
-      return Calendar.current.nextDate(
+      guard let fireDate = Calendar.current.nextDate(
         after: Date(),
         matching: DateComponents(hour: alert.time.hour, minute: alert.time.minute),
         matchingPolicy: .nextTime
-      )
+      ) else {
+        return nil
+      }
+      return Date()...fireDate
     case .paused:
       return nil
     @unknown default:
@@ -179,7 +182,8 @@ private struct FocusTimerPrimaryControlButton: View {
       Button(
         intent: FocusTimerResumeIntent(
           alarmId: context.attributes.metadata?.alarmId ?? "",
-          taskId: context.attributes.metadata?.taskId ?? ""
+          taskId: context.attributes.metadata?.taskId ?? "",
+          fireDateMillis: context.fireDateMillis ?? 0
         )
       ) {
         FocusTimerControlIcon(systemName: "play.fill")
@@ -189,7 +193,8 @@ private struct FocusTimerPrimaryControlButton: View {
       Button(
         intent: FocusTimerPauseIntent(
           alarmId: context.attributes.metadata?.alarmId ?? "",
-          taskId: context.attributes.metadata?.taskId ?? ""
+          taskId: context.attributes.metadata?.taskId ?? "",
+          fireDateMillis: context.fireDateMillis ?? 0
         )
       ) {
         FocusTimerControlIcon(systemName: "pause.fill")
@@ -216,6 +221,35 @@ private struct FocusTimerControlIcon: View {
       .frame(width: 26, height: 26)
       .background(FocusTimerStyle.primary, in: Circle())
       .accessibilityHidden(true)
+  }
+}
+
+@available(iOS 26.0, *)
+private extension ActivityViewContext where Attributes == AlarmAttributes<FocusTaskAlarmMetadata> {
+  var fireDateMillis: Double? {
+    switch state.mode {
+    case .countdown(let countdown):
+      return countdown.focusTimerEndDate.timeIntervalSince1970 * 1000
+    case .alert(let alert):
+      return Calendar.current.nextDate(
+        after: Date(),
+        matching: DateComponents(hour: alert.time.hour, minute: alert.time.minute),
+        matchingPolicy: .nextTime
+      ).map { $0.timeIntervalSince1970 * 1000 }
+    case .paused:
+      return nil
+    @unknown default:
+      return nil
+    }
+  }
+}
+
+@available(iOS 26.0, *)
+private extension AlarmPresentationState.Mode.Countdown {
+  var focusTimerEndDate: Date {
+    startDate.addingTimeInterval(
+      max(0, totalCountdownDuration - previouslyElapsedDuration)
+    )
   }
 }
 
@@ -277,6 +311,42 @@ private enum FocusTimerSystemNotifications {
   }
 }
 
+private enum FocusTimerSharedControlEvents {
+  static let appGroupIdentifier = "group.com.shape.focus"
+  static let eventsKey = "focus.taskTimer.controlEvents"
+
+  static func append(
+    action: String,
+    taskId: String,
+    alarmId: String,
+    fireDateMillis: Double
+  ) {
+    guard
+      !taskId.isEmpty,
+      let defaults = UserDefaults(suiteName: appGroupIdentifier)
+    else {
+      return
+    }
+
+    let now = Date()
+    let remainingSeconds = fireDateMillis > 0
+      ? max(0, Int(ceil((fireDateMillis / 1000) - now.timeIntervalSince1970)))
+      : nil
+    var events = defaults.array(forKey: eventsKey) as? [[String: Any]] ?? []
+    var event: [String: Any] = [
+      "action": action,
+      "taskId": taskId,
+      "alarmId": alarmId,
+      "occurredAt": now.timeIntervalSince1970 * 1000,
+    ]
+    if let remainingSeconds {
+      event["remainingSeconds"] = remainingSeconds
+    }
+    events.append(event)
+    defaults.set(events, forKey: eventsKey)
+  }
+}
+
 @available(iOS 26.0, *)
 struct FocusTimerPauseIntent: LiveActivityIntent {
   static var title: LocalizedStringResource = "Pause timer"
@@ -285,15 +355,19 @@ struct FocusTimerPauseIntent: LiveActivityIntent {
   var alarmId: String
   @Parameter(title: "Task ID")
   var taskId: String
+  @Parameter(title: "Fire Date")
+  var fireDateMillis: Double
 
   init() {
     alarmId = ""
     taskId = ""
+    fireDateMillis = 0
   }
 
-  init(alarmId: String, taskId: String) {
+  init(alarmId: String, taskId: String, fireDateMillis: Double) {
     self.alarmId = alarmId
     self.taskId = taskId
+    self.fireDateMillis = fireDateMillis
   }
 
   func perform() async throws -> some IntentResult {
@@ -301,6 +375,12 @@ struct FocusTimerPauseIntent: LiveActivityIntent {
       return .result()
     }
     try AlarmManager.shared.pause(id: id)
+    FocusTimerSharedControlEvents.append(
+      action: "pause",
+      taskId: taskId,
+      alarmId: alarmId,
+      fireDateMillis: fireDateMillis
+    )
     await FocusTimerSystemNotifications.cancelPendingNotifications(taskId: taskId)
     return .result()
   }
@@ -314,15 +394,19 @@ struct FocusTimerResumeIntent: LiveActivityIntent {
   var alarmId: String
   @Parameter(title: "Task ID")
   var taskId: String
+  @Parameter(title: "Fire Date")
+  var fireDateMillis: Double
 
   init() {
     alarmId = ""
     taskId = ""
+    fireDateMillis = 0
   }
 
-  init(alarmId: String, taskId: String) {
+  init(alarmId: String, taskId: String, fireDateMillis: Double) {
     self.alarmId = alarmId
     self.taskId = taskId
+    self.fireDateMillis = fireDateMillis
   }
 
   func perform() async throws -> some IntentResult {
@@ -330,6 +414,12 @@ struct FocusTimerResumeIntent: LiveActivityIntent {
       return .result()
     }
     try AlarmManager.shared.resume(id: id)
+    FocusTimerSharedControlEvents.append(
+      action: "resume",
+      taskId: taskId,
+      alarmId: alarmId,
+      fireDateMillis: fireDateMillis
+    )
     return .result()
   }
 }

@@ -2,7 +2,7 @@ name: focus
 description: "FocusAI - 結合AI智慧任務拆解的番茄工作法應用程式"
 publish_to: 'none'
 
-version: 1.0.4+6
+version: 1.0.5+7
 
 environment:
   sdk: ^3.8.1

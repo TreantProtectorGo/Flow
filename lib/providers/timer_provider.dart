@@ -232,6 +232,23 @@ class TimerProvider with ChangeNotifier {
     }
   }
 
+  void applySystemControlEvent(TaskTimerSystemControlEvent event) {
+    if (!_matchesActiveSystemTimeline(event.taskId)) {
+      return;
+    }
+
+    switch (event.action) {
+      case 'pause':
+        _applyExternalPause(event);
+      case 'resume':
+        if (_state == TimerState.paused) {
+          startTimer();
+        }
+      case 'stop':
+        unawaited(stopTimer());
+    }
+  }
+
   Future<void> stopTimer() async {
     _syncTimeLeftWithSystemClock();
     _timer?.cancel();
@@ -620,6 +637,54 @@ class TimerProvider with ChangeNotifier {
     if (_activeSystemTimelineId == id) {
       _activeSystemTimelineId = null;
     }
+  }
+
+  bool _matchesActiveSystemTimeline(String taskId) {
+    if (taskId.isEmpty) {
+      return false;
+    }
+
+    final String? currentTaskId = _ref
+        .read(taskProvider.notifier)
+        .currentTask
+        ?.id;
+    if (taskId.startsWith('standalone:')) {
+      return taskId == _activeSystemTimelineId ||
+          _isStandaloneTimerRun ||
+          currentTaskId == null;
+    }
+
+    return taskId == _activeSystemTimelineId || taskId == currentTaskId;
+  }
+
+  void _applyExternalPause(TaskTimerSystemControlEvent event) {
+    _syncTimeLeftWithSystemClock();
+    _timer?.cancel();
+    _currentPhaseEndsAt = null;
+    _mode = TimerMode.focus;
+    _activeSystemTimelineId = event.taskId;
+    if (event.taskId.startsWith('standalone:')) {
+      _isStandaloneTimerRun = true;
+      _currentSessionId ??= event.taskId.substring('standalone:'.length);
+    }
+
+    final int? remainingSeconds = event.remainingSeconds;
+    if (remainingSeconds != null) {
+      final int boundedRemaining = remainingSeconds
+          .clamp(0, _totalTimeInSeconds)
+          .toInt();
+      _timeLeftInSeconds = boundedRemaining;
+      if (_currentSessionStartTime == null) {
+        final int elapsedSeconds = _totalTimeInSeconds > boundedRemaining
+            ? _totalTimeInSeconds - boundedRemaining
+            : 0;
+        _currentSessionStartTime = event.occurredAt.subtract(
+          Duration(seconds: elapsedSeconds),
+        );
+      }
+    }
+    _state = TimerState.paused;
+    notifyListeners();
   }
 
   Future<void> _rescheduleSystemTimelineForCurrentTask() async {
