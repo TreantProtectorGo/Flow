@@ -112,7 +112,9 @@ private struct FocusTimerCountdownText: View {
 
   @ViewBuilder
   var body: some View {
-    if let timerInterval {
+    if let pausedRemainingText {
+      Text(pausedRemainingText)
+    } else if let timerInterval {
       Text(timerInterval: timerInterval, countsDown: true, showsHours: false)
     } else if let fallbackTitle {
       Text(fallbackTitle)
@@ -139,6 +141,27 @@ private struct FocusTimerCountdownText: View {
     @unknown default:
       return nil
     }
+  }
+
+  private var pausedRemainingText: String? {
+    guard case .paused(let paused) = context.state.mode else {
+      return nil
+    }
+    let remainingSeconds = max(
+      0,
+      Int(ceil(paused.totalCountdownDuration - paused.previouslyElapsedDuration))
+    )
+    return Self.formatDuration(seconds: remainingSeconds)
+  }
+
+  private static func formatDuration(seconds: Int) -> String {
+    let hours = seconds / 3600
+    let minutes = (seconds % 3600) / 60
+    let seconds = seconds % 60
+    if hours > 0 {
+      return "\(hours):\(String(format: "%02d", minutes)):\(String(format: "%02d", seconds))"
+    }
+    return "\(String(format: "%02d", minutes)):\(String(format: "%02d", seconds))"
   }
 }
 
