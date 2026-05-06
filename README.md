@@ -127,7 +127,7 @@ flutter build ipa --release --dart-define=API_BASE_URL=https://your-api-domain.c
 
 ### Release to the App Store
 
-Current app version: `1.0.5+7`
+Current app version: `1.0.6+8`
 
 1. Verify the release build locally:
 
@@ -147,11 +147,11 @@ In Xcode, select the `Runner` scheme, choose `Any iOS Device (arm64)` or a conne
 
 3. Create the new App Store version:
 
-In App Store Connect, open `Flow - AI Focus Planner`, add a new iOS version `1.0.5`, enter the release notes and metadata, then save.
+In App Store Connect, open `Flow - AI Focus Planner`, add a new iOS version `1.0.6`, enter the release notes and metadata, then save.
 
 4. Attach the processed build and submit:
 
-Wait until the uploaded build finishes processing in App Store Connect, choose build `1.0.5 (7)` for the new version, complete any compliance questions, then submit the version to App Review.
+Wait until the uploaded build finishes processing in App Store Connect, choose build `1.0.6 (8)` for the new version, complete any compliance questions, then submit the version to App Review.
 
 ### Testing
 
