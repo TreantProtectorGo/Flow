@@ -417,6 +417,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get todayGoal => '今日目標';
 
   @override
+  String get goalAchieved => '達成';
+
+  @override
   String get weekGoal => '本週目標';
 
   @override
@@ -1561,6 +1564,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get todayGoal => '今日目標';
+
+  @override
+  String get goalAchieved => '達成';
 
   @override
   String get weekGoal => '本週目標';

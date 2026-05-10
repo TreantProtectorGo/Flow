@@ -855,6 +855,12 @@ abstract class AppLocalizations {
   /// **'今日目標'**
   String get todayGoal;
 
+  /// No description provided for @goalAchieved.
+  ///
+  /// In zh, this message translates to:
+  /// **'達成'**
+  String get goalAchieved;
+
   /// No description provided for @weekGoal.
   ///
   /// In zh, this message translates to:

@@ -826,12 +826,18 @@ class TasksScreen extends ConsumerWidget {
   }
 
   void _openAIChatWithTask(BuildContext context, Task task) {
+    final l10n = AppLocalizations.of(context)!;
+    final buffer = StringBuffer()
+      ..writeln(l10n.aiPromptIntro)
+      ..writeln('${l10n.taskTitle}: ${task.title}');
+    if (task.description != null && task.description!.isNotEmpty) {
+      buffer.writeln('${l10n.description}: ${task.description}');
+    }
+    buffer.write(l10n.aiPromptOutputStyle);
+
     Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (context) => AIChatScreen(
-          initialMessage:
-              '請幫我拆解這個任務：${task.title}${task.description != null ? '\n描述：${task.description}' : ''}',
-        ),
+        builder: (context) => AIChatScreen(initialMessage: buffer.toString()),
         fullscreenDialog: true,
       ),
     );

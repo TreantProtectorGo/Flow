@@ -454,7 +454,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen>
                               getTooltipItems: (touchedSpots) {
                                 return touchedSpots.map((spot) {
                                   return LineTooltipItem(
-                                    '${spot.y.toInt()} 個',
+                                    l10n.pomodoroCount(spot.y.toInt()),
                                     TextStyle(
                                       color: theme.colorScheme.onInverseSurface,
                                     ),

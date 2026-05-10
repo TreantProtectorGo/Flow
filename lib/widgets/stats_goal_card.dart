@@ -88,7 +88,7 @@ class StatsGoalCard extends StatelessWidget {
                       Icon(Icons.check_circle, color: onAccent, size: 16),
                       const SizedBox(width: 4),
                       Text(
-                        '達成',
+                        l10n.goalAchieved,
                         style: TextStyle(
                           color: onAccent,
                           fontWeight: FontWeight.bold,

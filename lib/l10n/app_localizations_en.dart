@@ -423,6 +423,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get todayGoal => 'Today\'s Goal';
 
   @override
+  String get goalAchieved => 'Achieved';
+
+  @override
   String get weekGoal => 'Weekly Goal';
 
   @override
