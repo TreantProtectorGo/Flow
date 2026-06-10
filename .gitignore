@@ -16,6 +16,9 @@ docs/*
 migrate_working_dir/
 
 # Firebase (IMPORTANT - Keep these secret!)
+.env
+.env.*
+!.env.example
 .firebaserc
 firebase-debug.log
 firebase-debug.*.log
@@ -32,10 +35,11 @@ lib/firebase_options.dart
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# VS Code local workspace settings
+.vscode/
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
 
 # Flutter/Dart/Pub related
 **/doc/api/

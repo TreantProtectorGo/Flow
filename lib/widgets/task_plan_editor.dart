@@ -190,25 +190,31 @@ class _TaskPlanEditorState extends ConsumerState<TaskPlanEditor> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  Text(
+                    l10n.totalPomodoros(_calculateTotalPomodoros()),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
                   Row(
                     children: [
-                      Text(
-                        l10n.totalPomodoros(_calculateTotalPomodoros()),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
                       Icon(
                         Icons.schedule,
                         size: 14,
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                       const SizedBox(width: 4),
-                      Text(
-                        _calculateEstimatedTime(),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                      Flexible(
+                        child: Text(
+                          _calculateEstimatedTime(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                     ],
